@@ -74,19 +74,6 @@ export default function App() {
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          {currentPage === 'folders' && (
-            <button 
-              onClick={() => {
-                // We need to trigger the folders page's create mode.
-                // For simplicity, we'll just let the folders page handle its own button, 
-                // but we could use an event emitter or state in App.
-                // Let's stick to refining the existing logic.
-              }}
-              className="w-10 h-10 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl flex items-center justify-center shadow-lg active:scale-95 transition-all"
-            >
-              <Plus size={20} strokeWidth={3} />
-            </button>
-          )}
         </div>
       </header>
 
@@ -107,7 +94,7 @@ export default function App() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 dark:bg-slate-950/90 backdrop-blur-3xl px-8 pt-4 pb-8 flex justify-around items-center z-40 transition-all border-t border-slate-50 dark:border-slate-900/50">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 dark:bg-slate-950/90 backdrop-blur-3xl px-8 pt-4 pb-8 flex justify-around items-center z-40 transition-all">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;

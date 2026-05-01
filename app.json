@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Libre",
+    "slug": "libre-archival",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./favicon.svg",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./favicon.svg",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./favicon.svg",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "favicon": "./favicon.svg"
+    }
+  }
+}
