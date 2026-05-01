@@ -6,8 +6,7 @@ import {
   Search, 
   Settings as SettingsIcon, 
   BookOpen,
-  Moon,
-  Sun
+  Plus
 } from 'lucide-react';
 import { cn } from './lib/utils';
 
@@ -62,20 +61,32 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen max-w-md mx-auto bg-bg-primary shadow-2xl relative overflow-hidden transition-colors duration-300">
       {/* Header */}
-      <header className="px-6 pt-12 pb-4 flex justify-between items-center bg-bg-primary/80 backdrop-blur-xl sticky top-0 z-40 transition-colors">
+      <header className="px-6 pt-10 pb-4 flex justify-between items-center bg-bg-primary/80 backdrop-blur-xl sticky top-0 z-40 transition-colors border-b border-transparent">
         <div className="flex items-center space-x-4">
           <div className="relative group cursor-pointer" onClick={() => setCurrentPage('files')}>
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all duration-300">
-              <BookOpen className="text-white w-5 h-5" strokeWidth={2} />
+            <div className="w-10 h-10 rounded-[14px] overflow-hidden shadow-2xl shadow-blue-500/20 transition-all duration-300 group-hover:rotate-6 group-hover:scale-110 active:scale-95">
+              <img src="/favicon.svg" alt="Libre" className="w-full h-full object-cover" />
             </div>
           </div>
           <div>
-            <h1 className="text-lg font-bold font-sans text-text-primary tracking-tight leading-none uppercase">Libre</h1>
-            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1.5 leading-none">Archival System</p>
+            <h1 className="text-xl font-black font-sans text-text-primary tracking-tighter leading-none uppercase">Libre</h1>
+            <p className="text-[10px] font-black text-blue-500/80 uppercase tracking-[0.2em] mt-1 leading-none">Archival Node</p>
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          {/* Theme toggle removed as per request */}
+          {currentPage === 'folders' && (
+            <button 
+              onClick={() => {
+                // We need to trigger the folders page's create mode.
+                // For simplicity, we'll just let the folders page handle its own button, 
+                // but we could use an event emitter or state in App.
+                // Let's stick to refining the existing logic.
+              }}
+              className="w-10 h-10 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl flex items-center justify-center shadow-lg active:scale-95 transition-all"
+            >
+              <Plus size={20} strokeWidth={3} />
+            </button>
+          )}
         </div>
       </header>
 

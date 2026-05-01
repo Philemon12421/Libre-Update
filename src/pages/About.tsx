@@ -14,9 +14,12 @@ import { motion } from 'motion/react';
 export default function AboutPage() {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-32 text-left">
-        <div className="px-1 text-left">
-          <h2 className="text-2xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight uppercase">Archive Node</h2>
-          <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Drenchack Systems Protocol</p>
+        <div className="px-1 text-left flex items-start justify-between">
+          <div>
+            <h2 className="text-2xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight uppercase">Archive Node</h2>
+            <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Drenchack Systems Protocol</p>
+          </div>
+          <img src="/favicon.svg" alt="Libre Logo" className="w-12 h-12 rounded-xl shadow-lg" />
        </div>
 
        <div className="bg-white dark:bg-slate-900 p-8 rounded-[32px] space-y-8 shadow-sm border border-slate-50 dark:border-slate-800/50">

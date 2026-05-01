@@ -128,60 +128,71 @@ export default function FoldersPage() {
             </button>
           </div>
 
-          <AnimatePresence>
-            {isCreating && (
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-white dark:bg-slate-900/50 p-6 rounded-3xl shadow-xl space-y-5 border border-blue-50/50 dark:border-transparent"
-              >
-                <div className="flex items-center space-x-3">
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", getFolderColor(selectedColor).bg)}>
-                    <FolderPlus className={getFolderColor(selectedColor).text} size={20} />
+      <AnimatePresence>
+        {isCreating && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 shadow-2xl relative border border-slate-100 dark:border-slate-800"
+            >
+              <div className="space-y-6">
+                <div className="text-center">
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">New Collection</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Define your space</p>
+                </div>
+
+                <div className="flex flex-col items-center space-y-6">
+                  <div className={cn("w-20 h-20 rounded-[28px] flex items-center justify-center shadow-lg transition-all transform", getFolderColor(selectedColor).bg)}>
+                    <FolderPlus className={getFolderColor(selectedColor).text} size={32} />
                   </div>
-                  <input 
-                    autoFocus
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    placeholder="Collection Name..."
-                    className="flex-1 bg-slate-50 dark:bg-slate-800 dark:text-white dark:border-slate-700 px-5 py-3 rounded-xl text-sm font-bold focus:outline-none placeholder:text-slate-300"
-                    onKeyDown={(e) => e.key === 'Enter' && createFolder()}
-                  />
+                  
+                  <div className="w-full space-y-4">
+                    <input 
+                      autoFocus
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      placeholder="Protocol Name..."
+                      className="w-full bg-slate-50 dark:bg-slate-800 dark:text-white dark:border-slate-700 px-5 py-4 rounded-2xl text-sm font-bold focus:outline-none placeholder:text-slate-300 text-center"
+                      onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+                    />
+
+                    <div className="flex justify-center space-x-3">
+                      {FOLDER_COLORS.map(color => (
+                          <button
+                            key={color.name}
+                            onClick={() => setSelectedColor(color.name)}
+                            className={cn(
+                              "w-6 h-6 rounded-full transition-all border-2",
+                              color.class,
+                              selectedColor === color.name ? "border-slate-900 dark:border-white scale-110 shadow-md" : "border-transparent"
+                            )}
+                          />
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 
-                <div className="flex items-center justify-between px-1">
-                  <div className="flex space-x-2">
-                    {FOLDER_COLORS.map(color => (
-                        <button
-                          key={color.name}
-                          onClick={() => setSelectedColor(color.name)}
-                          className={cn(
-                            "w-5 h-5 rounded-full transition-all border-2",
-                            color.class,
-                            selectedColor === color.name ? "border-slate-900 dark:border-white scale-110" : "border-transparent"
-                          )}
-                        />
-                    ))}
-                  </div>
-                  <div className="flex space-x-2">
-                    <button 
-                      onClick={() => setIsCreating(false)}
-                      className="px-4 py-2 text-slate-400 font-bold text-[10px] uppercase tracking-widest"
-                    >
-                      Cancel
-                    </button>
-                    <button 
-                      onClick={createFolder}
-                      className="px-6 py-2 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-blue-600 transition-colors"
-                    >
-                      Create
-                    </button>
-                  </div>
+                <div className="flex flex-col space-y-3 pt-4">
+                  <button 
+                    onClick={createFolder}
+                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all"
+                  >
+                    Initialize Archive
+                  </button>
+                  <button 
+                    onClick={() => setIsCreating(false)}
+                    className="w-full py-2 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    Cancel Action
+                  </button>
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
           <div className="grid grid-cols-2 gap-3 px-1">
             {folders.length === 0 && !isCreating && (
