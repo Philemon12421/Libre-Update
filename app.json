@@ -1,7 +1,13 @@
 {
   "expo": {
     "name": "Libre",
-    "slug": "libre-archival",
+    "slug": "librev",
+    "owner": "philemon12421",
+    "extra": {
+      "eas": {
+        "projectId": "a7294b13-7e21-4313-bcb7-50bb34c00ed4"
+      }
+    },
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./favicon.svg",
