@@ -5,34 +5,35 @@ import {
   FolderIcon, 
   Search, 
   Settings as SettingsIcon, 
-  Info, 
-  Plus, 
-  LayoutGrid,
-  List,
-  Menu
+  BookOpen,
+  Moon,
+  Sun
 } from 'lucide-react';
 import { cn } from './lib/utils';
 
-// Pages - I will create these shortly
+// Pages
 import FilesPage from './pages/Files';
 import FoldersPage from './pages/Folders';
-import BookSearchPage from './pages/BookSearch';
+import BookSearch from './pages/BookSearch';
 import SettingsPage from './pages/Settings';
 import AboutPage from './pages/About';
-import { registerForPushNotificationsAsync, sendLocalNotification } from './lib/notifications';
-import { db } from './lib/db';
 
 type Page = 'files' | 'folders' | 'search' | 'settings' | 'about';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('files');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
+    const root = window.document.documentElement;
+    root.classList.add('dark');
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
@@ -40,75 +41,41 @@ export default function App() {
   }, []);
 
   const navigation = [
-    { id: 'files', label: 'Files', icon: FileText },
-    { id: 'folders', label: 'Pages', icon: FolderIcon },
-    { id: 'search', label: 'Books', icon: Search },
+    { id: 'files', label: 'Home', icon: FileText },
+    { id: 'folders', label: 'Library', icon: FolderIcon },
+    { id: 'search', label: 'Search', icon: Search },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
-    { id: 'about', label: 'About', icon: Info },
+    { id: 'about', label: 'About', icon: BookOpen },
   ];
 
   const renderPage = () => {
     switch (currentPage) {
       case 'files': return <FilesPage />;
       case 'folders': return <FoldersPage />;
-      case 'search': return <BookSearchPage />;
-      case 'settings': return <SettingsPage />;
+      case 'search': return <BookSearch />;
+      case 'settings': return <SettingsPage isDark={isDark} setIsDark={setIsDark} />;
       case 'about': return <AboutPage />;
       default: return <FilesPage />;
     }
   };
 
-  const onAddFile = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true;
-    input.onchange = async (e: any) => {
-      const files = e.target.files;
-      if (files) {
-        for (const file of files) {
-          await db.files.add({
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            data: file,
-            createdAt: Date.now(),
-          });
-        }
-        sendLocalNotification("Upload Complete", `${files.length} file(s) have been added to your library.`);
-        // This is a bit hacky, but since we don't have a global state for files,
-        // we hope the user lands back on files page and it refreshes.
-        // In a real app we'd use a store.
-        if (currentPage === 'files') {
-          window.location.reload(); // Simple way to refresh for now
-        } else {
-          setCurrentPage('files');
-        }
-      }
-    };
-    input.click();
-  };
-
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-white shadow-2xl relative overflow-hidden">
+    <div className="flex flex-col h-screen max-w-md mx-auto bg-bg-primary shadow-2xl relative overflow-hidden transition-colors duration-300">
       {/* Header */}
-      <header className="px-6 pt-12 pb-6 flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-50">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-[14px] flex items-center justify-center shadow-lg shadow-blue-100/50 transform -rotate-12 transition-transform hover:rotate-0">
-            <span className="text-white font-black text-xl font-display">L</span>
+      <header className="px-6 pt-12 pb-4 flex justify-between items-center bg-bg-primary/80 backdrop-blur-xl sticky top-0 z-40 transition-colors">
+        <div className="flex items-center space-x-4">
+          <div className="relative group cursor-pointer" onClick={() => setCurrentPage('files')}>
+            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/10 transition-all duration-300">
+              <BookOpen className="text-white w-5 h-5" strokeWidth={2} />
+            </div>
           </div>
           <div>
-            <h1 className="text-2xl font-black font-display text-slate-900 tracking-tighter leading-none">Libre</h1>
-            <p className="text-[9px] font-black text-blue-500 uppercase tracking-[0.2em] mt-1">Digital Lab</p>
+            <h1 className="text-lg font-bold font-sans text-text-primary tracking-tight leading-none uppercase">Libre</h1>
+            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1.5 leading-none">Archival System</p>
           </div>
         </div>
         <div className="flex items-center space-x-3">
-          <div className={cn(
-            "w-2 h-2 rounded-full animate-pulse",
-            isOnline ? "bg-emerald-500" : "bg-red-500"
-          )} />
-          <button className="p-3 bg-slate-50 text-slate-400 rounded-2xl hover:bg-slate-100 transition-colors">
-            <Menu className="w-6 h-6" />
-          </button>
+          {/* Theme toggle removed as per request */}
         </div>
       </header>
 
@@ -117,10 +84,10 @@ export default function App() {
         <AnimatePresence mode="wait">
           <motion.div
             key={currentPage}
-            initial={{ opacity: 0, y: 12 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
             className="p-6"
           >
             {renderPage()}
@@ -129,7 +96,7 @@ export default function App() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 backdrop-blur-xl border-t border-slate-50 px-6 py-4 flex justify-around items-center z-40">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 dark:bg-slate-950/90 backdrop-blur-3xl px-8 pt-4 pb-8 flex justify-around items-center z-40 transition-all border-t border-slate-50 dark:border-slate-900/50">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -138,19 +105,19 @@ export default function App() {
               key={item.id}
               onClick={() => setCurrentPage(item.id as Page)}
               className={cn(
-                "flex flex-col items-center space-y-1.5 transition-all duration-500 relative",
-                isActive ? "text-blue-600 scale-110" : "text-slate-300 hover:text-slate-400"
+                "flex flex-col items-center space-y-1.5 transition-all duration-300 group",
+                isActive ? "text-blue-600" : "text-slate-400 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-400"
               )}
             >
               <div className={cn(
-                "w-12 h-12 rounded-[18px] flex items-center justify-center transition-all duration-500",
-                isActive ? "bg-blue-600 text-white shadow-xl shadow-blue-100" : "bg-transparent"
+                "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
+                isActive ? "bg-blue-50 dark:bg-blue-900/20" : "bg-transparent group-hover:bg-slate-50 dark:group-hover:bg-slate-800/40"
               )}>
-                <Icon size={22} strokeWidth={isActive ? 3 : 2} />
+                <Icon size={20} className="transition-transform group-active:scale-90" strokeWidth={isActive ? 2.5 : 2} />
               </div>
               <span className={cn(
-                "text-[9px] font-black uppercase tracking-[0.15em] transition-all duration-500",
-                isActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-1"
+                "text-[9px] font-extrabold uppercase tracking-widest transition-all",
+                isActive ? "opacity-100" : "opacity-0 group-hover:opacity-60"
               )}>
                 {item.label}
               </span>
@@ -158,18 +125,6 @@ export default function App() {
           );
         })}
       </nav>
-
-      {/* Floating Action Button */}
-      <motion.button
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={onAddFile}
-        className="fixed bottom-28 right-6 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg shadow-blue-200 flex items-center justify-center z-30"
-      >
-        <Plus size={28} />
-      </motion.button>
-
-      {/* Profile Sidebar/Overlay would go here */}
     </div>
   );
 }

@@ -9,19 +9,31 @@ import {
   Upload,
   Eye,
   X,
-  Loader2
+  Loader2,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { db, LibreFile } from '../lib/db';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { sendLocalNotification } from '../lib/notifications';
+import { Document, Page, pdfjs } from 'react-pdf';
+
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 export default function FilesPage({ activeFolderId }: { activeFolderId?: number }) {
   const [files, setFiles] = useState<LibreFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewFile, setPreviewFile] = useState<LibreFile | null>(null);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
+  const [isSelectMode, setIsSelectMode] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ name: string; progress: number } | null>(null);
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pdfScale, setPdfScale] = useState(1.0);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
@@ -33,6 +45,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     }
     setFiles(allFiles);
     setLoading(false);
+    setSelectedFileIds(new Set());
   }, [activeFolderId]);
 
   useEffect(() => {
@@ -40,14 +53,23 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   }, [fetchFiles]);
 
   const stats = React.useMemo(() => {
-    const counts = { pdf: 0, image: 0, doc: 0, other: 0 };
+    const data = {
+      pdf: { count: 0, size: 0 },
+      image: { count: 0, size: 0 },
+      doc: { count: 0, size: 0 },
+      other: { count: 0, size: 0 }
+    };
     files.forEach(f => {
-      if (f.type.includes('pdf')) counts.pdf++;
-      else if (f.type.includes('image')) counts.image++;
-      else if (f.type.includes('word') || f.type.includes('doc')) counts.doc++;
-      else counts.other++;
+      let cat: 'pdf' | 'image' | 'doc' | 'other' = 'other';
+      const type = f.type.toLowerCase();
+      if (type.includes('pdf')) cat = 'pdf';
+      else if (type.includes('image')) cat = 'image';
+      else if (type.includes('word') || type.includes('doc') || type.includes('presentation') || type.includes('powerpoint') || type.includes('sheet') || type.includes('excel')) cat = 'doc';
+      
+      data[cat].count++;
+      data[cat].size += f.size || 0;
     });
-    return counts;
+    return data;
   }, [files]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
@@ -62,7 +84,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       const libreFile: LibreFile = {
         name: file.name,
-        type: file.type,
+        type: file.type || 'application/octet-stream',
         size: file.size,
         data: file,
         folderId: activeFolderId,
@@ -76,28 +98,46 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   }, [fetchFiles, activeFolderId]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
-    onDrop,
-    accept: {
-      'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/msword': ['.doc'],
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
-      'application/vnd.ms-powerpoint': ['.ppt'],
-      'image/*': ['.jpeg', '.jpg', '.png', '.gif']
-    }
+    onDrop
   } as any);
 
   const deleteFile = async (id: number) => {
+    if (!confirm('Permanently delete this item?')) return;
     await db.files.delete(id);
     fetchFiles();
   };
 
-  const getIcon = (type: string) => {
-    if (type.includes('image')) return <ImageIcon className="text-blue-500" />;
-    if (type.includes('pdf')) return <FileText className="text-red-500" />;
-    if (type.includes('presentation') || type.includes('ppt')) return <File className="text-orange-500" />;
-    if (type.includes('word') || type.includes('doc')) return <FileText className="text-blue-600" />;
-    return <File className="text-slate-400" />;
+  const deleteSelected = async () => {
+    if (selectedFileIds.size === 0) return;
+    if (!confirm(`Permanently purge ${selectedFileIds.size} selected items?`)) return;
+    
+    await Promise.all(Array.from(selectedFileIds).map(id => db.files.delete(id)));
+    setIsSelectMode(false);
+    fetchFiles();
+  };
+
+  const toggleSelect = (id: number) => {
+    const newSelected = new Set(selectedFileIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedFileIds(newSelected);
+  };
+
+  const getIcon = (type: string, name: string = '') => {
+    const t = type.toLowerCase();
+    const n = name.toLowerCase();
+    
+    if (t.includes('pdf') || n.endsWith('.pdf')) return <FileText className="text-red-500" size={18} />;
+    if (t.includes('image') || n.endsWith('.jpg') || n.endsWith('.png') || n.endsWith('.webp')) return <ImageIcon className="text-blue-500" size={18} />;
+    if (t.includes('word') || t.includes('doc') || n.endsWith('.docx') || n.endsWith('.doc')) return <FileText className="text-indigo-500" size={18} />;
+    if (t.includes('presentation') || t.includes('powerpoint') || n.endsWith('.pptx') || n.endsWith('.ppt')) return <FileText className="text-orange-500" size={18} />;
+    if (t.includes('spreadsheet') || t.includes('excel') || n.endsWith('.xlsx') || n.endsWith('.xls') || n.endsWith('.csv')) return <FileText className="text-emerald-500" size={18} />;
+    if (t.includes('zip') || t.includes('rar') || t.includes('compressed') || n.endsWith('.zip')) return <File className="text-amber-500" size={18} />;
+    if (t.includes('video') || n.endsWith('.mp4') || n.endsWith('.mov')) return <ImageIcon className="text-violet-500" size={18} />;
+    return <File className="text-slate-400 dark:text-slate-600" size={18} />;
   };
 
   const formatSize = (bytes: number) => {
@@ -108,87 +148,131 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
+    setNumPages(numPages);
+    setPageNumber(1);
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-end px-1">
         <div>
-          <h2 className="text-3xl font-black font-display text-slate-900 tracking-tight">Your Lab</h2>
-          <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest mt-1">Local Intelligence Storage</p>
+          <h2 className="text-xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight uppercase">Index</h2>
+          <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1.5 leading-none">Local Resource Manager</p>
+        </div>
+        <div className="flex items-center space-x-2">
+          {files.length > 0 && (
+            <button 
+              onClick={() => {
+                setIsSelectMode(!isSelectMode);
+                setSelectedFileIds(new Set());
+              }}
+              className={cn(
+                "px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95",
+                isSelectMode 
+                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900" 
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+              )}
+            >
+              {isSelectMode ? "Cancel" : "Select"}
+            </button>
+          )}
+          <AnimatePresence>
+            {isSelectMode && selectedFileIds.size > 0 && (
+              <motion.button
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                onClick={deleteSelected}
+                className="bg-red-500 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95"
+              >
+                Delete ({selectedFileIds.size})
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div>
       </div>
 
-      {/* Stats Bar */}
       {!activeFolderId && files.length > 0 && (
         <div className="grid grid-cols-4 gap-2 px-1">
           {[
-            { label: 'PDFs', val: stats.pdf, color: 'bg-red-500' },
-            { label: 'IMGs', val: stats.image, color: 'bg-blue-500' },
-            { label: 'DOCs', val: stats.doc, color: 'bg-indigo-500' },
-            { label: 'ETC', val: stats.other, color: 'bg-slate-400' },
+            { label: 'PDF', ...stats.pdf },
+            { label: 'IMG', ...stats.image },
+            { label: 'DOC', ...stats.doc },
+            { label: 'ETC', ...stats.other },
           ].map((s) => (
-            <div key={s.label} className="bg-white border border-slate-100 p-2 rounded-2xl text-center">
-              <div className="text-sm font-black text-slate-900">{s.val}</div>
-              <div className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">{s.label}</div>
-              <div className={`h-1 w-full mt-1 rounded-full ${s.color} opacity-20`} />
+            <div key={s.label} className="bg-slate-50 dark:bg-slate-900 p-2.5 rounded-xl text-center border border-slate-100 dark:border-slate-800 transition-all hover:bg-slate-100 dark:hover:bg-slate-800">
+              <div className="text-xs font-black text-slate-900 dark:text-white leading-none">{s.count}</div>
+              <div className="text-[7px] text-blue-500 font-extrabold uppercase tracking-tight mt-1 leading-none">{formatSize(s.size)}</div>
+              <div className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tighter mt-1">{s.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Upload Zone */}
       <div 
         {...getRootProps()} 
         className={cn(
-          "group relative border-2 border-dashed rounded-[32px] p-8 flex flex-col items-center justify-center transition-all duration-500",
-          isDragActive ? "border-blue-500 bg-blue-50/50 scale-[0.98]" : "border-slate-200 bg-white hover:border-blue-400"
+          "group relative rounded-2xl p-8 flex flex-col items-center justify-center transition-all duration-300",
+          isDragActive ? "bg-blue-50 dark:bg-blue-900/10" : "bg-white dark:bg-slate-900/40 hover:bg-blue-50/20 dark:hover:bg-slate-900/60 border border-blue-50/50 dark:border-transparent"
         )}
       >
         <input {...getInputProps()} />
-        <div className="w-12 h-12 bg-blue-600 rounded-[18px] shadow-lg shadow-blue-100 flex items-center justify-center mb-3 group-hover:rotate-12 transition-transform">
-          <Upload className="w-5 h-5 text-white" />
+        <div className="w-10 h-10 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center mb-3 group-hover:bg-blue-50 group-hover:scale-110 transition-all">
+          <Upload className="w-5 h-5 text-slate-400 dark:text-slate-400 group-hover:text-blue-600" />
         </div>
-        <p className="text-sm font-black text-slate-800">
-          {isDragActive ? "Drop to save" : "Import Assets"}
+        <p className="text-[10px] font-bold text-slate-500/70 dark:text-slate-400 uppercase tracking-widest text-center">
+          {isDragActive ? "Inbound sync" : "Click or drag to archive"}
         </p>
         
-        {/* Active Upload Progress Overlay */}
         <AnimatePresence>
           {uploadProgress && (
             <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="absolute inset-0 bg-white/90 backdrop-blur-sm rounded-[38px] flex flex-col items-center justify-center p-8 z-10"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-white/90 dark:bg-slate-950/90 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center p-4 z-10"
             >
-              <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
-              <p className="text-sm font-black text-slate-800 text-center truncate w-full px-4">{uploadProgress.name}</p>
-              <div className="w-full h-2 bg-slate-100 rounded-full mt-4 overflow-hidden">
+              <Loader2 className="w-5 h-5 text-blue-600 animate-spin mb-2" />
+              <p className="text-[9px] font-bold text-slate-900 dark:text-white uppercase tracking-tight">{uploadProgress.name}</p>
+              <div className="w-32 h-1 bg-slate-100 dark:bg-slate-800 rounded-full mt-3 overflow-hidden">
                 <motion.div 
                   initial={{ width: 0 }}
                   animate={{ width: `${uploadProgress.progress}%` }}
                   className="h-full bg-blue-600"
                 />
               </div>
-              <span className="text-[10px] font-black text-blue-600 mt-2 uppercase tracking-widest">{uploadProgress.progress}%</span>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* File List */}
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-2">
         {loading && files.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center space-y-4">
-             <div className="w-12 h-12 border-4 border-slate-100 border-t-blue-600 rounded-full animate-spin"></div>
-             <p className="text-xs font-black text-slate-400 uppercase tracking-widest">indexing storage...</p>
+          <div className="py-16 flex flex-col items-center justify-center space-y-3">
+             <Loader2 className="w-6 h-6 text-slate-200 animate-spin" />
+             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Hydrating Index...</p>
           </div>
         ) : files.length === 0 ? (
-          <div className="py-24 text-center">
-            <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mx-auto mb-6">
-               <FileText size={40} className="text-slate-200" />
+          <div className="py-24 text-center space-y-6 px-10">
+            <div className="relative mx-auto w-20 h-20">
+              <div className="absolute inset-0 bg-blue-500/10 dark:bg-blue-500/5 blur-2xl rounded-full" />
+              <div className="relative w-20 h-20 bg-slate-50 dark:bg-slate-900 rounded-[28px] flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-800">
+                <FileText size={32} className="text-slate-300 dark:text-slate-700" />
+              </div>
             </div>
-            <h3 className="text-xl font-bold text-slate-800">No files yet</h3>
-            <p className="text-sm text-slate-400 mt-2 max-w-[200px] mx-auto">Upload your first document to get started</p>
+            <div className="space-y-2">
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">Archive Empty</h3>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed max-w-[220px] mx-auto">
+                Implement your local index by dragging assets or indexing remote resources.
+              </p>
+            </div>
+            <button 
+              {...getRootProps().onClick ? { onClick: getRootProps().onClick } : {}}
+              className="px-8 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all"
+            >
+              Start Archiving
+            </button>
           </div>
         ) : (
           <AnimatePresence initial={false}>
@@ -196,35 +280,68 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
               <motion.div
                 key={file.id}
                 layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="group flex items-center p-5 bg-white border border-slate-100 rounded-[32px] hover:border-blue-200 hover:shadow-xl hover:shadow-blue-50/20 transition-all cursor-pointer"
-                onClick={() => setPreviewFile(file)}
+                className={cn(
+                  "group flex items-center p-3.5 rounded-xl transition-all cursor-pointer shadow-[0_1px_4px_-2px_rgba(0,0,0,0.1)] hover:shadow-md border",
+                  isSelectMode && file.id && selectedFileIds.has(file.id)
+                    ? "bg-blue-50/50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
+                    : "bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/80 border-transparent hover:border-slate-100 dark:hover:border-slate-800"
+                )}
+                onClick={() => {
+                  if (isSelectMode && file.id) {
+                    toggleSelect(file.id);
+                  } else {
+                    setPreviewFile(file);
+                    setNumPages(null);
+                    setPageNumber(1);
+                  }
+                }}
               >
-                <div className="w-14 h-14 bg-slate-50 rounded-[22px] flex items-center justify-center mr-5 transition-colors group-hover:bg-blue-50">
-                  {getIcon(file.type)}
+                {isSelectMode && (
+                  <div className="mr-3">
+                    <div className={cn(
+                      "w-4 h-4 rounded border-2 transition-all flex items-center justify-center",
+                      file.id && selectedFileIds.has(file.id)
+                        ? "bg-blue-600 border-blue-600"
+                        : "bg-transparent border-slate-200"
+                    )}>
+                      {file.id && selectedFileIds.has(file.id) && (
+                        <div className="w-1.5 h-1.5 bg-white rounded-sm" />
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className={cn(
+                  "w-10 h-10 rounded-xl flex items-center justify-center mr-4 transition-all group-hover:scale-105",
+                  file.type.toLowerCase().includes('pdf') ? "bg-red-50 text-red-500" : 
+                  file.type.toLowerCase().includes('image') ? "bg-blue-50 text-blue-500" :
+                  "bg-blue-50/50 text-blue-300"
+                )}>
+                  {getIcon(file.type, file.name)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-black text-slate-800 truncate leading-snug">{file.name}</h3>
-                  <div className="flex items-center space-x-3 mt-1">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter bg-slate-50 px-2 py-0.5 rounded-md">
+                  <h3 className="text-[13px] font-bold text-slate-900 dark:text-white truncate group-hover:text-blue-600 transition-colors uppercase tracking-tight">{file.name}</h3>
+                  <div className="flex items-center space-x-2.5 mt-1">
+                    <span className="text-[9px] font-bold text-slate-400/60 dark:text-slate-400 uppercase tracking-tighter">
                       {formatSize(file.size)}
                     </span>
-                    <span className="text-[10px] font-bold text-slate-300">
-                      {format(file.createdAt, 'MMM d, h:mm a')}
+                    <span className="text-[9px] font-bold text-slate-100 dark:text-slate-800">•</span>
+                    <span className="text-[9px] font-bold text-slate-400/60 dark:text-slate-400 uppercase tracking-tighter">
+                      {format(file.createdAt, 'MMM d, yyyy')}
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center opacity-0 group-hover:opacity-100 transition-all scale-90 group-hover:scale-100 pr-2">
+                <div className={cn(
+                  "flex items-center opacity-0 group-hover:opacity-100 transition-opacity",
+                  isSelectMode && "hidden"
+                )}>
                    <button 
                     onClick={(e) => {
                       e.stopPropagation();
                       file.id && deleteFile(file.id);
                     }}
-                    className="p-3 hover:bg-red-50 text-red-500 rounded-full transition-colors"
+                    className="p-2 text-slate-200 hover:text-red-500 transition-colors"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               </motion.div>
@@ -233,85 +350,117 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         )}
       </div>
 
-      {/* Enhanced Preview Modal */}
       <AnimatePresence>
         {previewFile && (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center p-0 sm:p-6">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setPreviewFile(null)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="bg-white w-full max-w-lg mx-auto rounded-t-[40px] sm:rounded-[48px] overflow-hidden shadow-2xl z-10 relative flex flex-col max-h-[90vh]"
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-2xl overflow-hidden shadow-2xl z-10 relative flex flex-col h-[85vh]"
             >
-              <div className="p-8 border-b border-slate-50 flex items-center justify-between sticky top-0 bg-white z-10">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
+              <div className="p-4 flex items-center justify-between sticky top-0 z-20 bg-white dark:bg-slate-900 backdrop-blur-md">
+                <div className="flex items-center space-x-3 min-w-0">
+                  <div className="w-8 h-8 bg-slate-50 dark:bg-slate-800 rounded-lg flex items-center justify-center shrink-0">
                     {getIcon(previewFile.type)}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="font-black text-slate-900 truncate max-w-[200px] leading-tight">{previewFile.name}</h4>
-                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-1">{formatSize(previewFile.size)}</p>
+                    <h4 className="font-bold text-slate-900 dark:text-white truncate text-xs uppercase tracking-tight">{previewFile.name}</h4>
+                    <p className="text-[8px] font-bold text-blue-600 uppercase tracking-widest">{formatSize(previewFile.size)}</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setPreviewFile(null)}
-                  className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <div className="flex items-center space-x-1">
+                  <button 
+                    onClick={() => setPreviewFile(null)}
+                    className="p-2 text-slate-300 hover:text-slate-600 transition-colors"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-8 min-h-[300px] flex items-center justify-center">
+              <div className="flex-1 overflow-auto bg-slate-100 dark:bg-black p-4 flex flex-col items-center">
                 {previewFile.type.includes('image') ? (
                   <img 
                     src={URL.createObjectURL(previewFile.data)} 
                     alt={previewFile.name}
-                    className="max-w-full max-h-full object-contain rounded-2xl shadow-xl hover:scale-105 transition-transform cursor-zoom-in"
-                    onClick={(e) => window.open(URL.createObjectURL(previewFile.data), '_blank')}
+                    className="max-w-full h-auto rounded-lg shadow-lg bg-white"
                   />
                 ) : previewFile.type.includes('pdf') ? (
-                  <iframe 
-                    src={URL.createObjectURL(previewFile.data) + "#toolbar=0&navpanes=0&scrollbar=0"}
-                    className="w-full h-full min-h-[500px] rounded-2xl border-0 shadow-lg"
-                    title={previewFile.name}
-                  />
+                  <div className="w-full flex flex-col items-center space-y-4">
+                    <Document
+                      file={previewFile.data}
+                      onLoadSuccess={onDocumentLoadSuccess}
+                      loading={<Loader2 className="w-8 h-8 text-blue-600 animate-spin my-20" />}
+                      className="flex flex-col items-center"
+                    >
+                      <div className="bg-white dark:bg-slate-900 shadow-2xl rounded-sm overflow-hidden mb-4">
+                        <Page 
+                          pageNumber={pageNumber} 
+                          scale={pdfScale}
+                          renderTextLayer={false}
+                          renderAnnotationLayer={false}
+                          className="max-w-full"
+                          width={Math.min(window.innerWidth - 80, 500)}
+                        />
+                      </div>
+                    </Document>
+                    
+                    {numPages && (
+                      <div className="sticky bottom-4 flex items-center space-x-4 bg-white/95 dark:bg-slate-800/95 backdrop-blur pb-2 pt-2 px-6 rounded-2xl shadow-xl border border-blue-500/10 z-30 mb-8">
+                        <button 
+                          disabled={pageNumber <= 1}
+                          onClick={() => setPageNumber(prev => Math.max(1, prev - 1))}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 translate-y-[-1px]"
+                        >
+                          <ChevronLeft size={20} />
+                        </button>
+                        <div className="text-[10px] font-bold text-slate-900 dark:text-white uppercase tracking-widest whitespace-nowrap">
+                          {pageNumber} <span className="opacity-20 font-normal">/</span> {numPages}
+                        </div>
+                        <button 
+                          disabled={pageNumber >= numPages}
+                          onClick={() => setPageNumber(prev => Math.min(numPages, prev + 1))}
+                          className="p-1.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 translate-y-[-1px]"
+                        >
+                          <ChevronRight size={20} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ) : (
-                  <div className="text-center p-10 max-w-sm">
-                    <div className="w-20 h-20 bg-blue-50 text-blue-200 rounded-[32px] flex items-center justify-center mx-auto mb-6">
-                       <FileText size={40} />
-                    </div>
-                    <h5 className="font-bold text-slate-900 text-lg">Format Discovery</h5>
-                    <p className="text-sm text-slate-500 mt-2 leading-relaxed">
-                      In-app viewer for <strong>{previewFile.type.split('/')[1]?.toUpperCase()}</strong> is in development. You can download and open it with your preferred local viewer.
+                  <div className="text-center py-24">
+                    <FileText size={40} className="text-slate-200 mx-auto mb-4" />
+                    <h5 className="font-bold text-slate-900 dark:text-white text-sm">Preview Unavailable</h5>
+                    <p className="text-[9px] text-slate-400 mt-2 font-bold uppercase tracking-widest underline decoration-2 decoration-blue-500/20">
+                      Standard Archival Format Required
                     </p>
                   </div>
                 )}
               </div>
 
-              <div className="p-8 bg-white border-t border-slate-50 flex space-x-4">
+              <div className="p-4 bg-white dark:bg-slate-900">
                 <button 
                    onClick={() => {
-                      const url = URL.createObjectURL(previewFile.data);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = previewFile.name;
-                      a.click();
+                        const url = URL.createObjectURL(previewFile.data);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = previewFile.name;
+                        a.click();
                    }}
-                  className="flex-1 py-5 bg-blue-600 text-white rounded-[24px] font-black flex items-center justify-center space-x-3 shadow-xl shadow-blue-100 hover:bg-blue-700 transition-colors active:scale-[0.98]"
+                  className="w-full py-3 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl font-bold text-[10px] uppercase tracking-[0.2em] flex items-center justify-center space-x-2 transition-all active:scale-95 shadow-sm"
                 >
-                  <Download size={22} />
-                  <span>Download File</span>
+                  <Download size={16} />
+                  <span>Export Asset</span>
                 </button>
               </div>
-              <div className="h-4 sm:hidden bg-white" />
             </motion.div>
           </div>
         )}

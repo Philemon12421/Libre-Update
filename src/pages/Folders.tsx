@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   FolderIcon, 
   Plus, 
@@ -11,7 +11,7 @@ import {
   Download,
   X
 } from 'lucide-react';
-import { db, LibreFolder, LibreFile } from '../lib/db';
+import { db, LibreFolder } from '../lib/db';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
@@ -26,21 +26,54 @@ const FOLDER_COLORS = [
   { name: 'violet', class: 'bg-violet-500', bg: 'bg-violet-50', text: 'text-violet-600' },
 ];
 
+interface FolderWithStats extends LibreFolder {
+  count: number;
+  totalSize: number;
+}
+
 export default function FoldersPage() {
-  const [folders, setFolders] = useState<LibreFolder[]>([]);
+  const [folders, setFolders] = useState<FolderWithStats[]>([]);
   const [activeFolder, setActiveFolder] = useState<LibreFolder | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedColor, setSelectedColor] = useState('blue');
   const [isCreating, setIsCreating] = useState(false);
+  const [folderFileCount, setFolderFileCount] = useState(0);
+  const [deleteStep, setDeleteStep] = useState(0);
+  const [folderIdToDelete, setFolderIdToDelete] = useState<number | null>(null);
 
-  const fetchFolders = async () => {
-    const allFolders = await db.folders.orderBy('createdAt').reverse().toArray();
-    setFolders(allFolders);
+  const formatSize = (bytes: number) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
+
+  const fetchFolders = useCallback(async () => {
+    const allFolders = await db.folders.orderBy('createdAt').reverse().toArray();
+    
+    // Enrich folders with stats
+    const foldersWithStats = await Promise.all(allFolders.map(async (folder) => {
+      const filesInFolder = await db.files.where('folderId').equals(folder.id!).toArray();
+      const totalSize = filesInFolder.reduce((sum, f) => sum + (f.size || 0), 0);
+      return {
+        ...folder,
+        count: filesInFolder.length,
+        totalSize
+      };
+    }));
+
+    setFolders(foldersWithStats);
+    
+    if (activeFolder) {
+      const count = await db.files.where('folderId').equals(activeFolder.id!).count();
+      setFolderFileCount(count);
+    }
+  }, [activeFolder]);
 
   useEffect(() => {
     fetchFolders();
-  }, []);
+  }, [fetchFolders]);
 
   const createFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -55,31 +88,27 @@ export default function FoldersPage() {
     fetchFolders();
   };
 
-  const openFolder = async (folder: LibreFolder) => {
+  const openFolder = (folder: LibreFolder) => {
     setActiveFolder(folder);
-    if (folder.id) {
-      const files = await db.files.where('folderId').equals(folder.id).toArray();
-      setFolderFiles(files);
-    }
   };
 
   const deleteFolder = async (id: number) => {
-    if (!confirm('Delete this page? Items inside will be unassigned.')) return;
-    await db.folders.delete(id);
-    await db.files.where('folderId').equals(id).modify({ folderId: undefined });
+    setFolderIdToDelete(id);
+    setDeleteStep(1);
+  };
+
+  const executeDelete = async () => {
+    if (folderIdToDelete === null) return;
+    await db.files.where('folderId').equals(folderIdToDelete).delete();
+    await db.folders.delete(folderIdToDelete);
+    if (activeFolder?.id === folderIdToDelete) setActiveFolder(null);
+    setDeleteStep(0);
+    setFolderIdToDelete(null);
     fetchFolders();
   };
 
   const getFolderColor = (colorName?: string) => {
     return FOLDER_COLORS.find(c => c.name === colorName) || FOLDER_COLORS[0];
-  };
-
-  const getIcon = (type: string) => {
-    if (type.includes('image')) return <ImageIcon className="text-blue-500" />;
-    if (type.includes('pdf')) return <FileText className="text-red-500" />;
-    if (type.includes('presentation') || type.includes('ppt')) return <File className="text-orange-500" />;
-    if (type.includes('word') || type.includes('doc')) return <FileText className="text-blue-600" />;
-    return <File className="text-slate-400" />;
   };
 
   return (
@@ -88,27 +117,27 @@ export default function FoldersPage() {
         <div className="space-y-6">
           <div className="flex justify-between items-end px-1">
             <div>
-              <h2 className="text-4xl font-black font-display text-slate-900 tracking-tight">Spaces</h2>
-              <p className="text-slate-500 text-sm font-medium mt-1">Curate your collections</p>
+              <h2 className="text-2xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight uppercase">Library</h2>
+              <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Organize your collections</p>
             </div>
             <button 
               onClick={() => setIsCreating(true)}
-              className="w-14 h-14 bg-blue-600 text-white rounded-[24px] flex items-center justify-center hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:scale-95"
+              className="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 transition-all shadow-md shadow-blue-500/10 active:scale-95"
             >
-              <Plus size={28} />
+              <Plus size={24} />
             </button>
           </div>
 
           <AnimatePresence>
             {isCreating && (
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                className="bg-white p-6 rounded-[40px] border border-blue-100 shadow-xl shadow-blue-10/10 space-y-5"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white dark:bg-slate-900/50 p-6 rounded-3xl shadow-xl space-y-5 border border-blue-50/50 dark:border-transparent"
               >
                 <div className="flex items-center space-x-3">
-                  <div className={cn("w-10 h-10 rounded-2xl flex items-center justify-center", getFolderColor(selectedColor).bg)}>
+                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", getFolderColor(selectedColor).bg)}>
                     <FolderPlus className={getFolderColor(selectedColor).text} size={20} />
                   </div>
                   <input 
@@ -116,7 +145,7 @@ export default function FoldersPage() {
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
                     placeholder="Collection Name..."
-                    className="flex-1 bg-slate-50 px-5 py-3 rounded-2xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400"
+                    className="flex-1 bg-slate-50 dark:bg-slate-800 dark:text-white dark:border-slate-700 px-5 py-3 rounded-xl text-sm font-bold focus:outline-none placeholder:text-slate-300"
                     onKeyDown={(e) => e.key === 'Enter' && createFolder()}
                   />
                 </div>
@@ -128,9 +157,9 @@ export default function FoldersPage() {
                           key={color.name}
                           onClick={() => setSelectedColor(color.name)}
                           className={cn(
-                            "w-6 h-6 rounded-full transition-all border-2",
+                            "w-5 h-5 rounded-full transition-all border-2",
                             color.class,
-                            selectedColor === color.name ? "border-slate-900 scale-125" : "border-transparent"
+                            selectedColor === color.name ? "border-slate-900 dark:border-white scale-110" : "border-transparent"
                           )}
                         />
                     ))}
@@ -138,13 +167,13 @@ export default function FoldersPage() {
                   <div className="flex space-x-2">
                     <button 
                       onClick={() => setIsCreating(false)}
-                      className="px-4 py-2 text-slate-400 font-bold text-xs uppercase"
+                      className="px-4 py-2 text-slate-400 font-bold text-[10px] uppercase tracking-widest"
                     >
                       Cancel
                     </button>
                     <button 
                       onClick={createFolder}
-                      className="px-6 py-2 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-slate-200"
+                      className="px-6 py-2 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-blue-600 transition-colors"
                     >
                       Create
                     </button>
@@ -154,14 +183,27 @@ export default function FoldersPage() {
             )}
           </AnimatePresence>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-2 gap-3 px-1">
             {folders.length === 0 && !isCreating && (
-              <div className="col-span-2 py-24 text-center">
-                <div className="w-20 h-20 bg-slate-50 rounded-[32px] flex items-center justify-center mx-auto mb-6">
-                  <FolderPlus size={40} className="text-slate-200" />
+              <div className="col-span-2 py-24 text-center px-10 space-y-6">
+                <div className="relative mx-auto w-20 h-20">
+                  <div className="absolute inset-0 bg-blue-500/10 dark:bg-blue-500/5 blur-2xl rounded-full" />
+                  <div className="relative w-20 h-20 bg-slate-50 dark:bg-slate-900 rounded-[28px] flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-800">
+                    <FolderPlus size={32} className="text-slate-300 dark:text-slate-700" />
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-slate-800">Empty Spaces</h3>
-                <p className="text-sm text-slate-400 mt-2 max-w-[200px] mx-auto">Group your documents into beautiful folders</p>
+                <div className="space-y-2">
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">No Libraries</h3>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed max-w-[220px] mx-auto">
+                    Spaces allow you to group related nodes into logical distributed archives.
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setIsCreating(true)}
+                  className="px-8 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all mx-auto"
+                >
+                  Create Collection
+                </button>
               </div>
             )}
             {folders.map((folder) => {
@@ -170,26 +212,37 @@ export default function FoldersPage() {
                 <motion.div 
                   key={folder.id}
                   layout
-                  whileHover={{ y: -6, scale: 1.02 }}
                   onClick={() => openFolder(folder)}
-                  className="bg-white p-6 rounded-[40px] border border-slate-100 shadow-sm relative group cursor-pointer transition-all hover:bg-slate-50"
+                  className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm relative group cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:-translate-y-0.5 border border-slate-50 dark:border-transparent hover:border-blue-100"
                 >
-                  <div className={cn("w-14 h-14 rounded-[22px] flex items-center justify-center mb-5", color.bg)}>
-                    <FolderIcon size={28} className={color.text} fill="currentColor" fillOpacity={0.15} />
+                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-transform group-hover:scale-110", color.bg, "dark:bg-slate-800")}>
+                    <FolderIcon size={20} className={color.text} fill="currentColor" fillOpacity={0.1} />
                   </div>
-                  <h3 className="font-black text-slate-800 truncate leading-tight pr-4">{folder.name}</h3>
-                  <p className="text-[10px] font-black tracking-[0.1em] text-slate-400 mt-2 uppercase">
-                    Added {format(folder.createdAt, 'MMM d')}
-                  </p>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      folder.id && deleteFolder(folder.id);
-                    }}
-                    className="absolute top-5 right-5 p-2 text-slate-200 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                  >
-                    <Trash2 size={18} />
-                  </button>
+                  <h3 className="font-bold text-slate-900 dark:text-white truncate leading-tight pr-4 text-[11px] uppercase tracking-tight">{folder.name}</h3>
+                  <div className="flex flex-col space-y-1.5 mt-2.5">
+                    <div className="flex items-center space-x-2">
+                       <span className="text-[8px] font-black text-blue-500 uppercase tracking-tighter bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-md">
+                         {folder.count} Nodes
+                       </span>
+                       <span className="text-[8px] font-bold text-slate-400 uppercase">
+                         {formatSize(folder.totalSize)}
+                       </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[8px] font-bold text-slate-300 dark:text-slate-500 uppercase tracking-[0.1em]">
+                        {format(folder.createdAt, 'MMM d')}
+                      </p>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (folder.id) deleteFolder(folder.id);
+                        }}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-90"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
                 </motion.div>
               );
             })}
@@ -197,84 +250,79 @@ export default function FoldersPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center space-x-4 px-1">
-             <button 
-               onClick={() => setActiveFolder(null)}
-               className="w-10 h-10 bg-white border border-slate-100 text-slate-400 rounded-xl flex items-center justify-center hover:bg-slate-50 transition-colors"
-             >
-               <ChevronRight className="w-5 h-5 rotate-180" />
-             </button>
-             <div>
-               <h2 className="text-2xl font-black font-display text-slate-900 tracking-tight leading-none">{activeFolder.name}</h2>
-               <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest mt-2 px-1">Active Space</p>
-             </div>
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center space-x-4">
+              <button 
+                onClick={() => setActiveFolder(null)}
+                className="w-10 h-10 bg-white dark:bg-slate-900 text-slate-400 rounded-xl flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm border border-slate-100 dark:border-slate-800"
+              >
+                <ChevronRight className="w-5 h-5 rotate-180" />
+              </button>
+              <div>
+                <h2 className="text-xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight leading-none uppercase">{activeFolder.name}</h2>
+                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-1.5">{folderFileCount} Items</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => activeFolder.id && deleteFolder(activeFolder.id)}
+              className="w-12 h-12 flex items-center justify-center rounded-2xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-90 border border-transparent hover:border-red-500/20"
+              title="Delete Collection"
+            >
+              <Trash2 size={22} />
+            </button>
           </div>
 
           <FilesPage activeFolderId={activeFolder.id} />
         </div>
       )}
 
-      {/* Preview Modal (Same as Files page for consistency) */}
       <AnimatePresence>
-        {previewFile && (
-          <div className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-center p-0 sm:p-6">
+        {deleteStep > 0 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setPreviewFile(null)}
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-md"
-            />
-            <motion.div 
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              className="bg-white w-full max-w-lg mx-auto rounded-t-[40px] sm:rounded-[48px] overflow-hidden shadow-2xl z-10 relative flex flex-col max-h-[90vh]"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 shadow-2xl relative border border-slate-100 dark:border-slate-800"
             >
-              <div className="p-8 border-b border-slate-50 flex items-center justify-between sticky top-0 bg-white z-10">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
-                    {getIcon(previewFile.type)}
-                  </div>
-                  <div className="min-w-0">
-                    <h4 className="font-black text-slate-900 truncate max-w-[200px] leading-tight">{previewFile.name}</h4>
-                  </div>
+              <div className="text-center space-y-6">
+                <div className="w-20 h-20 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-[28px] flex items-center justify-center mx-auto">
+                   <Trash2 size={32} />
                 </div>
-                <button 
-                  onClick={() => setPreviewFile(null)}
-                  className="p-3 bg-slate-50 text-slate-400 rounded-full hover:bg-slate-100 transition-colors"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
+                
+                <div className="space-y-2">
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">
+                    {deleteStep === 1 ? "Archive Purge" : "Final Consent"}
+                  </h3>
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed px-4">
+                    {deleteStep === 1 
+                      ? "Deleting this collection will permanently remove all archived items indexed within it. This action is atomic and irreversible."
+                      : "Are you sure? This is the final point of no return. All nodes in this space will be destroyed from local storage."}
+                  </p>
+                </div>
 
-              <div className="flex-1 overflow-y-auto bg-slate-50 p-6 flex items-center justify-center">
-                {previewFile.type.includes('image') ? (
-                  <img src={URL.createObjectURL(previewFile.data)} alt={previewFile.name} className="max-w-full max-h-full object-contain rounded-2xl shadow-xl" />
-                ) : previewFile.type.includes('pdf') ? (
-                  <iframe src={URL.createObjectURL(previewFile.data)} className="w-full h-full min-h-[400px] rounded-2xl border-0" title={previewFile.name} />
-                ) : (
-                  <div className="text-center p-10">
-                    <FileText size={40} className="mx-auto mb-4 text-blue-200" />
-                    <p className="text-sm font-bold text-slate-500">Preview not available online</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-8 bg-white border-t border-slate-50">
-                <button 
-                   onClick={() => {
-                        const url = URL.createObjectURL(previewFile.data);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = previewFile.name;
-                        a.click();
-                   }}
-                  className="w-full py-5 bg-blue-600 text-white rounded-[24px] font-black flex items-center justify-center space-x-3"
-                >
-                  <Download size={22} />
-                  <span>Download File</span>
-                </button>
+                <div className="space-y-3 pt-2">
+                  <button 
+                    onClick={() => deleteStep === 1 ? setDeleteStep(2) : executeDelete()}
+                    className={cn(
+                      "w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95",
+                      deleteStep === 1 
+                        ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-slate-900/20" 
+                        : "bg-red-600 text-white shadow-red-500/20"
+                    )}
+                  >
+                    {deleteStep === 1 ? "Next Protocol" : "Execute Purge"}
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setDeleteStep(0);
+                      setFolderIdToDelete(null);
+                    }}
+                    className="w-full py-2 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    Abort Action
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
