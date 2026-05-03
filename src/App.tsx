@@ -6,11 +6,9 @@ import {
   Search, 
   Settings as SettingsIcon, 
   BookOpen,
-  Plus
 } from 'lucide-react';
 import { cn } from './lib/utils';
 
-// Pages
 import FilesPage from './pages/Files';
 import FoldersPage from './pages/Folders';
 import BookSearch from './pages/BookSearch';
@@ -21,71 +19,51 @@ type Page = 'files' | 'folders' | 'search' | 'settings' | 'about';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('files');
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isDark, setIsDark] = useState(false);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    // root.classList.add('dark'); // Removed to support light theme as main background
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
 
   const navigation = [
-    { id: 'files', label: 'Home', icon: FileText },
-    { id: 'folders', label: 'Library', icon: FolderIcon },
-    { id: 'search', label: 'Search', icon: Search },
+    { id: 'files',    label: 'Home',     icon: FileText },
+    { id: 'folders',  label: 'Library',  icon: FolderIcon },
+    { id: 'search',   label: 'Discover', icon: Search },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
-    { id: 'about', label: 'About', icon: BookOpen },
+    { id: 'about',    label: 'About',    icon: BookOpen },
   ];
 
   const renderPage = () => {
     switch (currentPage) {
-      case 'files': return <FilesPage />;
-      case 'folders': return <FoldersPage />;
-      case 'search': return <BookSearch />;
-      case 'settings': return <SettingsPage isDark={isDark} setIsDark={setIsDark} />;
-      case 'about': return <AboutPage />;
-      default: return <FilesPage />;
+      case 'files':    return <FilesPage />;
+      case 'folders':  return <FoldersPage />;
+      case 'search':   return <BookSearch />;
+      case 'settings': return <SettingsPage />;
+      case 'about':    return <AboutPage />;
+      default:         return <FilesPage />;
     }
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-bg-primary shadow-2xl relative overflow-hidden transition-colors duration-300">
+    <div className="flex flex-col h-screen max-w-md mx-auto bg-white shadow-2xl relative overflow-hidden">
       {/* Header */}
-      <header className="px-6 pt-10 pb-4 flex justify-between items-center bg-bg-primary/80 backdrop-blur-xl sticky top-0 z-40 transition-colors border-b border-transparent">
-        <div className="flex items-center space-x-4">
-          <div className="relative group cursor-pointer" onClick={() => setCurrentPage('files')}>
-            <div className="w-10 h-10 rounded-[14px] overflow-hidden shadow-2xl shadow-blue-500/20 transition-all duration-300 group-hover:rotate-6 group-hover:scale-110 active:scale-95">
-              <img src="/favicon.svg" alt="Libre" className="w-full h-full object-cover" />
-            </div>
+      <header className="px-5 pt-12 pb-3 flex items-center space-x-3 bg-white/95 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100">
+        <button onClick={() => setCurrentPage('files')} className="flex items-center space-x-3">
+          <div className="w-9 h-9 rounded-[12px] overflow-hidden shadow-md shadow-blue-500/20 transition-transform active:scale-95">
+            <img src="/favicon.svg" alt="Libre" className="w-full h-full object-cover" />
           </div>
           <div>
-            <h1 className="text-xl font-black font-sans text-text-primary tracking-tighter leading-none uppercase">Libre</h1>
-            <p className="text-[10px] font-black text-blue-500/80 uppercase tracking-[0.2em] mt-1 leading-none">Archival Node</p>
+            <h1 className="text-[17px] font-black text-slate-900 tracking-tight leading-none uppercase">Libre</h1>
+            <p className="text-[9px] font-bold text-blue-500 uppercase tracking-[0.18em] mt-0.5 leading-none">Archival Node</p>
           </div>
-        </div>
-        <div className="flex items-center space-x-3">
-        </div>
+        </button>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto scroll-smooth">
+      <main className="flex-1 overflow-y-auto overscroll-contain">
         <AnimatePresence mode="wait">
           <motion.div
             key={currentPage}
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="p-6"
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="px-5 pt-5 pb-28"
           >
             {renderPage()}
           </motion.div>
@@ -93,7 +71,7 @@ export default function App() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/90 dark:bg-slate-950/90 backdrop-blur-3xl px-8 pt-4 pb-8 flex justify-around items-center z-40 transition-all">
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-xl border-t border-slate-100 px-2 pt-2 pb-6 flex justify-around items-center z-40">
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
@@ -102,19 +80,19 @@ export default function App() {
               key={item.id}
               onClick={() => setCurrentPage(item.id as Page)}
               className={cn(
-                "flex flex-col items-center space-y-1.5 transition-all duration-300 group",
-                isActive ? "text-blue-600" : "text-slate-400 dark:text-slate-600 hover:text-slate-600 dark:hover:text-slate-400"
+                'flex flex-col items-center space-y-1 transition-all duration-200 px-2 py-1.5 rounded-xl',
+                isActive ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
               )}
             >
               <div className={cn(
-                "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
-                isActive ? "bg-blue-50 dark:bg-blue-900/20" : "bg-transparent group-hover:bg-slate-50 dark:group-hover:bg-slate-800/40"
+                'w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200',
+                isActive ? 'bg-blue-50' : 'bg-transparent'
               )}>
-                <Icon size={20} className="transition-transform group-active:scale-90" strokeWidth={isActive ? 2.5 : 2} />
+                <Icon size={19} strokeWidth={isActive ? 2.5 : 1.8} />
               </div>
               <span className={cn(
-                "text-[9px] font-extrabold uppercase tracking-widest transition-all",
-                isActive ? "opacity-100" : "opacity-0 group-hover:opacity-60"
+                'text-[9px] font-bold uppercase tracking-wider transition-all',
+                isActive ? 'opacity-100 text-blue-600' : 'opacity-50'
               )}>
                 {item.label}
               </span>
