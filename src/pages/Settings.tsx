@@ -175,7 +175,7 @@ export default function SettingsPage({ isDark, setIsDark }: SettingsProps) {
         {settingsGroups.map((group, idx) => (
           <div key={idx} className="space-y-4">
              <div className="flex justify-between items-end px-2">
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-blue-200 dark:text-slate-700">{group.title}</h3>
+                <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-300 dark:text-slate-700">{group.title}</h3>
                 {group.headerAction}
              </div>
              <div className="bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-sm">

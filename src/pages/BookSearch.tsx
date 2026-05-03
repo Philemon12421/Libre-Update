@@ -79,7 +79,7 @@ export default function BookSearchPage() {
 
       <div className="relative group px-1">
         <div className="absolute inset-y-0 left-6 flex items-center pointer-events-none">
-          <Search className={cn("w-5 h-5 transition-all duration-300", searching ? "text-blue-600 animate-pulse scale-110" : "text-blue-200 dark:text-slate-700 group-focus-within:text-blue-500")} />
+          <Search className={cn("w-5 h-5 transition-all duration-300", searching ? "text-blue-600 animate-pulse scale-110" : "text-slate-300 dark:text-slate-700 group-focus-within:text-blue-500")} />
         </div>
         <input 
           type="text"

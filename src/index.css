@@ -12,10 +12,10 @@
 }
 
 :root {
-  --bg-primary: #020617;
-  --bg-secondary: #0f172a;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
+  --bg-primary: #ffffff;
+  --bg-secondary: #f0f9ff;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
   --primary: #3b82f6;
 }
 

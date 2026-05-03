@@ -69,7 +69,7 @@ export default function AboutPage() {
           </div>
 
        <div className="text-center px-8">
-          <p className="text-[9px] font-bold text-blue-200 dark:text-slate-600 uppercase tracking-[0.3em]">
+          <p className="text-[9px] font-bold text-slate-300 dark:text-slate-600 uppercase tracking-[0.3em]">
              Built with passion for the digital future.
           </p>
        </div>

@@ -12,17 +12,25 @@ import {
   Loader2,
   ExternalLink,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Edit2,
+  Plus,
+  FolderPlus
 } from 'lucide-react';
-import { db, LibreFile } from '../lib/db';
+import { db, LibreFile, LibreFolder } from '../lib/db';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { sendLocalNotification } from '../lib/notifications';
 import { Document, Page, pdfjs } from 'react-pdf';
 
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+const FOLDER_COLORS = [
+  { name: 'blue', class: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-600' },
+  { name: 'rose', class: 'bg-rose-500', bg: 'bg-rose-50', text: 'text-rose-600' },
+  { name: 'emerald', class: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-600' },
+  { name: 'amber', class: 'bg-amber-500', bg: 'bg-amber-50', text: 'text-amber-600' },
+  { name: 'violet', class: 'bg-violet-500', bg: 'bg-violet-50', text: 'text-violet-600' },
+];
 
 export default function FilesPage({ activeFolderId }: { activeFolderId?: number }) {
   const [files, setFiles] = useState<LibreFile[]>([]);
@@ -30,6 +38,14 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   const [previewFile, setPreviewFile] = useState<LibreFile | null>(null);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
   const [isSelectMode, setIsSelectMode] = useState(false);
+  const [folders, setFolders] = useState<LibreFolder[]>([]);
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [editingFile, setEditingFile] = useState<LibreFile | null>(null);
+  const [newFileName, setNewFileName] = useState('');
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [selectedFolderColor, setSelectedFolderColor] = useState('blue');
   const [uploadProgress, setUploadProgress] = useState<{ name: string; progress: number } | null>(null);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
@@ -43,6 +59,8 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     } else {
       allFiles = await db.files.orderBy('createdAt').reverse().toArray();
     }
+    const allFolders = await db.folders.toArray();
+    setFolders(allFolders);
     setFiles(allFiles);
     setLoading(false);
     setSelectedFileIds(new Set());
@@ -101,6 +119,30 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     onDrop
   } as any);
 
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return;
+    await db.folders.add({
+      name: newFolderName,
+      createdAt: Date.now(),
+      color: selectedFolderColor
+    });
+    setNewFolderName('');
+    setSelectedFolderColor('blue');
+    setIsCreatingFolder(false);
+    fetchFiles();
+    sendLocalNotification("Library Expanded", `New collection "${newFolderName}" initiated.`);
+  };
+
+  const renameFile = async () => {
+    if (!newFileName.trim() || !editingFile?.id) return;
+    await db.files.update(editingFile.id, { name: newFileName.trim() });
+    setShowRenameModal(false);
+    setEditingFile(null);
+    setNewFileName('');
+    fetchFiles();
+    sendLocalNotification("Asset Renamed", "File metadata updated successfully.");
+  };
+
   const deleteFile = async (id: number) => {
     if (!confirm('Permanently delete this item?')) return;
     await db.files.delete(id);
@@ -124,6 +166,28 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
       newSelected.add(id);
     }
     setSelectedFileIds(newSelected);
+  };
+
+  const selectAll = () => {
+    if (selectedFileIds.size === files.length) {
+      setSelectedFileIds(new Set());
+    } else {
+      const allIds = files.map(f => f.id).filter((id): id is number => id !== undefined);
+      setSelectedFileIds(new Set(allIds));
+    }
+  };
+
+  const moveSelected = async (folderId: number | null) => {
+    if (selectedFileIds.size === 0) return;
+    await Promise.all(
+      Array.from(selectedFileIds).map(id => 
+        db.files.update(id, { folderId: folderId || undefined })
+      )
+    );
+    setShowMoveModal(false);
+    setIsSelectMode(false);
+    fetchFiles();
+    sendLocalNotification("Files Moved", `${selectedFileIds.size} item(s) relocated.`);
   };
 
   const getIcon = (type: string, name: string = '') => {
@@ -153,6 +217,10 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     setPageNumber(1);
   }
 
+  const getFolderColor = (colorName?: string) => {
+    return FOLDER_COLORS.find(c => c.name === colorName) || FOLDER_COLORS[0];
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex justify-between items-end px-1">
@@ -161,35 +229,41 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
           <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-[0.2em] mt-1.5 leading-none">Local Resource Manager</p>
         </div>
         <div className="flex items-center space-x-2">
-          {files.length > 0 && (
+          {!isSelectMode && (
             <button 
-              onClick={() => {
-                setIsSelectMode(!isSelectMode);
-                setSelectedFileIds(new Set());
-              }}
-              className={cn(
-                "px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95",
-                isSelectMode 
-                  ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900" 
-                  : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-              )}
+              onClick={() => setIsCreatingFolder(true)}
+              className="w-10 h-10 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-xl flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-95"
+              title="New Collection"
             >
-              {isSelectMode ? "Cancel" : "Select"}
+              <Plus size={18} />
             </button>
           )}
-          <AnimatePresence>
-            {isSelectMode && selectedFileIds.size > 0 && (
-              <motion.button
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                onClick={deleteSelected}
-                className="bg-red-500 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95"
+          {files.length > 0 && (
+            <div className="flex items-center space-x-2">
+              {isSelectMode && (
+                <button 
+                  onClick={selectAll}
+                  className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95"
+                >
+                  {selectedFileIds.size === files.length ? "Deselect All" : "Select All"}
+                </button>
+              )}
+              <button 
+                onClick={() => {
+                  setIsSelectMode(!isSelectMode);
+                  setSelectedFileIds(new Set());
+                }}
+                className={cn(
+                  "px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95",
+                  isSelectMode 
+                    ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900" 
+                    : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                )}
               >
-                Delete ({selectedFileIds.size})
-              </motion.button>
-            )}
-          </AnimatePresence>
+                {isSelectMode ? "Done" : "Select"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -246,6 +320,218 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {isCreatingFolder && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 shadow-2xl relative border border-slate-100 dark:border-slate-800"
+            >
+              <div className="space-y-6">
+                <div className="text-center">
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">New Collection</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Define your space</p>
+                </div>
+
+                <div className="flex flex-col items-center space-y-6">
+                  <div className={cn("w-20 h-20 rounded-[28px] flex items-center justify-center shadow-lg transition-all transform", getFolderColor(selectedFolderColor).bg)}>
+                    <FolderPlus className={getFolderColor(selectedFolderColor).text} size={32} />
+                  </div>
+                  
+                  <div className="w-full space-y-4">
+                    <input 
+                      autoFocus
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      placeholder="Protocol Name..."
+                      className="w-full bg-slate-50 dark:bg-slate-800 dark:text-white dark:border-slate-700 px-5 py-4 rounded-2xl text-sm font-bold focus:outline-none placeholder:text-slate-300 text-center"
+                      onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+                    />
+
+                    <div className="flex justify-center space-x-3">
+                      {FOLDER_COLORS.map(color => (
+                          <button
+                            key={color.name}
+                            onClick={() => setSelectedFolderColor(color.name)}
+                            className={cn(
+                              "w-6 h-6 rounded-full transition-all border-2",
+                              color.class,
+                              selectedFolderColor === color.name ? "border-slate-900 dark:border-white scale-110 shadow-md" : "border-transparent"
+                            )}
+                          />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex flex-col space-y-3 pt-4">
+                  <button 
+                    onClick={createFolder}
+                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all"
+                  >
+                    Initialize Archive
+                  </button>
+                  <button 
+                    onClick={() => setIsCreatingFolder(false)}
+                    className="w-full py-2 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    Cancel Action
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showRenameModal && editingFile && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 shadow-2xl relative border border-slate-100 dark:border-slate-800"
+            >
+              <div className="space-y-6">
+                <div className="text-center">
+                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">Rename Asset</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Update local metadata</p>
+                </div>
+
+                <div className="flex flex-col items-center space-y-6">
+                  <div className="w-20 h-20 rounded-[28px] bg-blue-50 dark:bg-blue-900/20 text-blue-600 flex items-center justify-center shadow-lg transition-all transform">
+                    {getIcon(editingFile.type)}
+                  </div>
+                  
+                  <div className="w-full">
+                    <input 
+                      autoFocus
+                      value={newFileName}
+                      onChange={(e) => setNewFileName(e.target.value)}
+                      placeholder="Asset Name..."
+                      className="w-full bg-slate-50 dark:bg-slate-800 dark:text-white dark:border-slate-700 px-5 py-4 rounded-2xl text-sm font-bold focus:outline-none placeholder:text-slate-300 text-center"
+                      onKeyDown={(e) => e.key === 'Enter' && renameFile()}
+                    />
+                  </div>
+                </div>
+                
+                <div className="flex flex-col space-y-3 pt-4">
+                  <button 
+                    onClick={renameFile}
+                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all"
+                  >
+                    Execute Update
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowRenameModal(false);
+                      setEditingFile(null);
+                    }}
+                    className="w-full py-2 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    Abort Change
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isSelectMode && selectedFileIds.size > 0 && (
+          <motion.div 
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-sm px-6 z-50"
+          >
+            <div className="bg-slate-900 dark:bg-white dark:text-slate-900 text-white p-4 rounded-3xl shadow-2xl flex items-center justify-between">
+              <div className="flex flex-col ml-2">
+                <span className="text-[10px] font-black uppercase tracking-widest">{selectedFileIds.size} Selected</span>
+                <span className="text-[8px] opacity-50 font-bold uppercase tracking-tighter">Bulk Action Protocol</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => setShowMoveModal(true)}
+                  className="p-3 bg-white/10 dark:bg-slate-900/10 hover:bg-white/20 dark:hover:bg-slate-900/20 rounded-2xl transition-colors"
+                >
+                  <ExternalLink size={14} />
+                </button>
+                <button 
+                  onClick={deleteSelected}
+                  className="p-3 bg-red-500/80 hover:bg-red-500 rounded-2xl transition-colors text-white"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showMoveModal && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMoveModal(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-white dark:bg-slate-900 w-full max-w-xs rounded-[32px] p-6 shadow-2xl relative border border-slate-100 dark:border-slate-800"
+            >
+              <div className="space-y-6">
+                <div className="text-center">
+                  <h3 className="text-lg font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">Relocate Node</h3>
+                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Select target dimension</p>
+                </div>
+                
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                  <button 
+                    onClick={() => moveSelected(null)}
+                    className="w-full flex items-center p-4 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-100"
+                  >
+                    <div className="w-8 h-8 bg-slate-100 dark:bg-slate-800 rounded-lg flex items-center justify-center mr-3 text-slate-400">
+                      <File size={16} />
+                    </div>
+                    <span className="text-[11px] font-black text-slate-900 dark:text-white uppercase">Root Directory</span>
+                  </button>
+                  
+                  {folders.map(folder => (
+                    <button 
+                      key={folder.id}
+                      onClick={() => folder.id && moveSelected(folder.id)}
+                      className="w-full flex items-center p-4 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors border border-transparent hover:border-slate-100"
+                    >
+                      <div className="w-8 h-8 bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-lg flex items-center justify-center mr-3">
+                        <FileText size={16} />
+                      </div>
+                      <span className="text-[11px] font-black text-slate-900 dark:text-white uppercase">{folder.name}</span>
+                    </button>
+                  ))}
+                </div>
+                
+                <button 
+                  onClick={() => setShowMoveModal(false)}
+                  className="w-full py-3 text-slate-400 font-bold text-[9px] uppercase tracking-widest"
+                >
+                  Cancel Protocol
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 gap-2">
         {loading && files.length === 0 ? (
@@ -337,9 +623,22 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                    <button 
                     onClick={(e) => {
                       e.stopPropagation();
+                      setEditingFile(file);
+                      setNewFileName(file.name);
+                      setShowRenameModal(true);
+                    }}
+                    className="p-2 text-slate-200 hover:text-blue-500 transition-colors"
+                    title="Rename Asset"
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                   <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
                       file.id && deleteFile(file.id);
                     }}
                     className="p-2 text-slate-200 hover:text-red-500 transition-colors"
+                    title="Purge Asset"
                   >
                     <Trash2 size={12} />
                   </button>

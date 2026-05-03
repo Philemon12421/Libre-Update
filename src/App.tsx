@@ -22,7 +22,7 @@ type Page = 'files' | 'folders' | 'search' | 'settings' | 'about';
 export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('files');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isDark, setIsDark] = useState(true);
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -30,8 +30,7 @@ export default function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    const root = window.document.documentElement;
-    root.classList.add('dark');
+    // root.classList.add('dark'); // Removed to support light theme as main background
 
     return () => {
       window.removeEventListener('online', handleOnline);
