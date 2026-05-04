@@ -11,6 +11,9 @@ import { cn } from '../lib/utils';
 import { sendLocalNotification } from '../lib/notifications';
 import { Document, Page, pdfjs } from 'react-pdf';
 
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
 const FOLDER_COLORS = [
   { name: 'blue',    class: 'bg-blue-500',    bg: 'bg-blue-50',    text: 'text-blue-600' },
   { name: 'rose',    class: 'bg-rose-500',    bg: 'bg-rose-50',    text: 'text-rose-600' },
@@ -555,6 +558,13 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                 >
                   <Download size={14} />
                   <span>Download</span>
+                </button>
+                <button
+                  onClick={() => { if (previewFile.id) { deleteFile(previewFile.id); setPreviewFile(null); } }}
+                  className="w-full py-3 bg-red-50 text-red-600 rounded-xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
+                >
+                  <Trash2 size={14} />
+                  <span>Delete File</span>
                 </button>
               </div>
             </motion.div>

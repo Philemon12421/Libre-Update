@@ -25,19 +25,25 @@ export default function BookSearchPage() {
   const [selectedBook, setSelectedBook] = useState<BookResult | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
-  const searchBooks = async () => {
-    if (!query.trim()) return;
+  const searchBooks = async (customQuery?: string) => {
+    const activeQuery = customQuery || query;
+    if (!activeQuery.trim()) return;
     setSearching(true);
     setResults([]);
     setHasSearched(true);
 
     try {
-      const [googleRes, olRes] = await Promise.all([
-        fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(query)}&maxResults=10`),
-        fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=8`),
+      const [googleRes, olRes, gutenRes] = await Promise.all([
+        fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(activeQuery)}&maxResults=10`),
+        fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(activeQuery)}&limit=10`),
+        fetch(`https://gutendex.com/books/?search=${encodeURIComponent(activeQuery)}`),
       ]);
 
-      const [googleData, olData] = await Promise.all([googleRes.json(), olRes.json()]);
+      const [googleData, olData, gutenData] = await Promise.all([
+        googleRes.json(), 
+        olRes.json(),
+        gutenRes.json()
+      ]);
 
       const googleBooks: BookResult[] = (googleData.items || []).map((item: any) => ({
         id: `google-${item.id}`,
@@ -52,7 +58,7 @@ export default function BookSearchPage() {
         rating: item.volumeInfo.averageRating,
       }));
 
-      const olBooks: BookResult[] = (olData.docs || []).map((item: any) => ({
+      const olBooks: BookResult[] = (olData.docs || []).slice(0, 10).map((item: any) => ({
         id: `ol-${item.key}`,
         title: item.title || 'Unknown Title',
         authors: item.author_name || ['Unknown Author'],
@@ -66,7 +72,19 @@ export default function BookSearchPage() {
         publishedDate: item.first_publish_year?.toString(),
       }));
 
-      setResults([...googleBooks, ...olBooks]);
+      const gutenBooks: BookResult[] = (gutenData.results || []).slice(0, 10).map((item: any) => ({
+        id: `guten-${item.id}`,
+        title: item.title || 'Unknown Title',
+        authors: item.authors.map((a: any) => a.name) || ['Public Domain'],
+        thumbnail: item.formats['image/jpeg'] || PLACEHOLDER_COVER,
+        description: `Download count: ${item.download_count}. Languages: ${item.languages.join(', ')}.`,
+        previewLink: item.formats['text/html'] || item.formats['text/plain'] || '#',
+        infoLink: `https://www.gutenberg.org/ebooks/${item.id}`,
+        source: 'Gutenberg',
+        publishedDate: 'Public Domain',
+      }));
+
+      setResults([...googleBooks, ...olBooks, ...gutenBooks]);
     } catch (err) {
       console.error('Search failed', err);
     } finally {
@@ -83,25 +101,40 @@ export default function BookSearchPage() {
       </div>
 
       {/* Search Bar */}
-      <div className="relative">
-        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-          <Search className={cn('w-4 h-4 transition-colors', searching ? 'text-blue-500 animate-pulse' : 'text-slate-300')} />
+      <div className="space-y-3">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
+            <Search className={cn('w-4 h-4 transition-colors', searching ? 'text-blue-500 animate-pulse' : 'text-slate-300')} />
+          </div>
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && searchBooks()}
+            placeholder="Search books, authors, titles..."
+            className="w-full bg-slate-50 border border-slate-200 pl-11 pr-24 py-3.5 rounded-2xl text-sm font-medium text-slate-800 placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all"
+          />
+          <button
+            onClick={() => searchBooks()}
+            disabled={searching || !query.trim()}
+            className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+          >
+            {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Search'}
+          </button>
         </div>
-        <input
-          type="text"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && searchBooks()}
-          placeholder="Search books, authors, titles..."
-          className="w-full bg-slate-50 border border-slate-200 pl-11 pr-24 py-3.5 rounded-2xl text-sm font-medium text-slate-800 placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all"
-        />
-        <button
-          onClick={searchBooks}
-          disabled={searching || !query.trim()}
-          className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
-        >
-          {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Search'}
-        </button>
+
+        {/* Categories Refinement */}
+        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {['Fiction', 'Science', 'History', 'Tech', 'Biography', 'Philosophy'].map(cat => (
+            <button
+              key={cat}
+              onClick={() => { setQuery(cat); setTimeout(() => searchBooks(cat), 10); }}
+              className="px-4 py-2 bg-white border border-slate-100 rounded-xl text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap hover:border-blue-200 transition-all active:scale-95"
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* States */}
@@ -136,7 +169,7 @@ export default function BookSearchPage() {
             </p>
           </div>
           <div className="flex justify-center gap-2">
-            {['Google Books', 'Open Library'].map(src => (
+            {['Google Books', 'Open Library', 'Gutenberg'].map(src => (
               <div key={src} className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl">
                 <Globe size={10} className="text-blue-400" />
                 <span className="text-[9px] font-semibold text-slate-500 uppercase">{src}</span>
