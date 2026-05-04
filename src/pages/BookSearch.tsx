@@ -33,16 +33,18 @@ export default function BookSearchPage() {
     setHasSearched(true);
 
     try {
-      const [googleRes, olRes, gutenRes] = await Promise.all([
+      const [googleRes, olRes, gutenRes, iaRes] = await Promise.all([
         fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(activeQuery)}&maxResults=10`),
         fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(activeQuery)}&limit=10`),
         fetch(`https://gutendex.com/books/?search=${encodeURIComponent(activeQuery)}`),
+        fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(activeQuery)}+AND+mediatype:texts&output=json&rows=10`),
       ]);
 
-      const [googleData, olData, gutenData] = await Promise.all([
+      const [googleData, olData, gutenData, iaData] = await Promise.all([
         googleRes.json(), 
         olRes.json(),
-        gutenRes.json()
+        gutenRes.json(),
+        iaRes.json()
       ]);
 
       const googleBooks: BookResult[] = (googleData.items || []).map((item: any) => ({
@@ -84,7 +86,19 @@ export default function BookSearchPage() {
         publishedDate: 'Public Domain',
       }));
 
-      setResults([...googleBooks, ...olBooks, ...gutenBooks]);
+      const iaBooks: BookResult[] = (iaData.response.docs || []).map((item: any) => ({
+        id: `ia-${item.identifier}`,
+        title: item.title || 'Unknown Title',
+        authors: [item.creator || 'Unknown Creator'],
+        thumbnail: `https://archive.org/services/img/${item.identifier}`,
+        description: item.description || 'Digitized by Internet Archive.',
+        previewLink: `https://archive.org/details/${item.identifier}`,
+        infoLink: `https://archive.org/details/${item.identifier}`,
+        source: 'Archive.org',
+        publishedDate: item.date,
+      }));
+
+      setResults([...googleBooks, ...olBooks, ...gutenBooks, ...iaBooks]);
     } catch (err) {
       console.error('Search failed', err);
     } finally {

@@ -325,22 +325,23 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                     {formatSize(file.size)} · {format(file.createdAt, 'MMM d, yyyy')}
                   </p>
                 </div>
-                {!isSelectMode && (
-                  <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <button
-                      onClick={e => { e.stopPropagation(); setEditingFile(file); setNewFileName(file.name); setShowRenameModal(true); }}
-                      className="p-2 text-slate-300 hover:text-blue-500 transition-colors"
-                    >
-                      <Edit2 size={13} />
-                    </button>
-                    <button
-                      onClick={e => { e.stopPropagation(); file.id && deleteFile(file.id); }}
-                      className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                )}
+                <div className={cn(
+                  "flex items-center transition-opacity shrink-0",
+                  isSelectMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                )}>
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingFile(file); setNewFileName(file.name); setShowRenameModal(true); }}
+                    className="p-2 text-slate-300 hover:text-blue-500 transition-colors"
+                  >
+                    <Edit2 size={13} />
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); file.id && deleteFile(file.id); }}
+                    className="p-2 text-slate-300 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
               </motion.div>
             ))}
           </AnimatePresence>
