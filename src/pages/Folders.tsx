@@ -1,29 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  FolderIcon, 
-  Plus, 
-  ChevronRight, 
-  FolderPlus,
-  Trash2,
-  FileText,
-  Image as ImageIcon,
-  File,
-  Download,
-  X
-} from 'lucide-react';
+import { FolderIcon, Plus, ChevronLeft, FolderPlus, Trash2 } from 'lucide-react';
 import { db, LibreFolder } from '../lib/db';
 import { motion, AnimatePresence } from 'motion/react';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
-
 import FilesPage from './Files';
 
 const FOLDER_COLORS = [
-  { name: 'blue', class: 'bg-blue-500', bg: 'bg-blue-50', text: 'text-blue-600' },
-  { name: 'rose', class: 'bg-rose-500', bg: 'bg-rose-50', text: 'text-rose-600' },
-  { name: 'emerald', class: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-600' },
-  { name: 'amber', class: 'bg-amber-500', bg: 'bg-amber-50', text: 'text-amber-600' },
-  { name: 'violet', class: 'bg-violet-500', bg: 'bg-violet-50', text: 'text-violet-600' },
+  { name: 'blue',    class: 'bg-blue-500',    bg: 'bg-blue-50',    text: 'text-blue-600',    border: 'border-blue-100' },
+  { name: 'rose',    class: 'bg-rose-500',    bg: 'bg-rose-50',    text: 'text-rose-600',    border: 'border-rose-100' },
+  { name: 'emerald', class: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-100' },
+  { name: 'amber',   class: 'bg-amber-500',   bg: 'bg-amber-50',   text: 'text-amber-600',   border: 'border-amber-100' },
+  { name: 'violet',  class: 'bg-violet-500',  bg: 'bg-violet-50',  text: 'text-violet-600',  border: 'border-violet-100' },
 ];
 
 interface FolderWithStats extends LibreFolder {
@@ -34,307 +22,254 @@ interface FolderWithStats extends LibreFolder {
 export default function FoldersPage() {
   const [folders, setFolders] = useState<FolderWithStats[]>([]);
   const [activeFolder, setActiveFolder] = useState<LibreFolder | null>(null);
+  const [folderFileCount, setFolderFileCount] = useState(0);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedColor, setSelectedColor] = useState('blue');
   const [isCreating, setIsCreating] = useState(false);
-  const [folderFileCount, setFolderFileCount] = useState(0);
-  const [deleteStep, setDeleteStep] = useState(0);
-  const [folderIdToDelete, setFolderIdToDelete] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B';
-    const k = 1024;
-    const sizes = ['B', 'KB', 'MB', 'GB'];
+    if (!bytes) return '0 B';
+    const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
+  const getFolderColor = (colorName?: string) =>
+    FOLDER_COLORS.find(c => c.name === colorName) || FOLDER_COLORS[0];
+
   const fetchFolders = useCallback(async () => {
     const allFolders = await db.folders.orderBy('createdAt').reverse().toArray();
-    
-    // Enrich folders with stats
-    const foldersWithStats = await Promise.all(allFolders.map(async (folder) => {
-      const filesInFolder = await db.files.where('folderId').equals(folder.id!).toArray();
-      const totalSize = filesInFolder.reduce((sum, f) => sum + (f.size || 0), 0);
-      return {
-        ...folder,
-        count: filesInFolder.length,
-        totalSize
-      };
-    }));
-
+    const foldersWithStats = await Promise.all(
+      allFolders.map(async folder => {
+        const filesInFolder = await db.files.where('folderId').equals(folder.id!).toArray();
+        return {
+          ...folder,
+          count: filesInFolder.length,
+          totalSize: filesInFolder.reduce((sum, f) => sum + (f.size || 0), 0),
+        };
+      })
+    );
     setFolders(foldersWithStats);
-    
+
     if (activeFolder) {
       const count = await db.files.where('folderId').equals(activeFolder.id!).count();
       setFolderFileCount(count);
     }
   }, [activeFolder]);
 
-  useEffect(() => {
-    fetchFolders();
-  }, [fetchFolders]);
+  useEffect(() => { fetchFolders(); }, [fetchFolders]);
 
   const createFolder = async () => {
     if (!newFolderName.trim()) return;
-    await db.folders.add({
-      name: newFolderName,
-      createdAt: Date.now(),
-      color: selectedColor
-    });
+    await db.folders.add({ name: newFolderName.trim(), createdAt: Date.now(), color: selectedColor });
     setNewFolderName('');
     setSelectedColor('blue');
     setIsCreating(false);
     fetchFolders();
   };
 
-  const openFolder = (folder: LibreFolder) => {
-    setActiveFolder(folder);
-  };
-
-  const deleteFolder = async (id: number) => {
-    setFolderIdToDelete(id);
-    setDeleteStep(1);
-  };
-
-  const executeDelete = async () => {
-    if (folderIdToDelete === null) return;
-    await db.files.where('folderId').equals(folderIdToDelete).delete();
-    await db.folders.delete(folderIdToDelete);
-    if (activeFolder?.id === folderIdToDelete) setActiveFolder(null);
-    setDeleteStep(0);
-    setFolderIdToDelete(null);
+  const executeDelete = async (id: number) => {
+    await db.files.where('folderId').equals(id).delete();
+    await db.folders.delete(id);
+    if (activeFolder?.id === id) setActiveFolder(null);
+    setConfirmDeleteId(null);
     fetchFolders();
   };
 
-  const getFolderColor = (colorName?: string) => {
-    return FOLDER_COLORS.find(c => c.name === colorName) || FOLDER_COLORS[0];
-  };
-
   return (
-    <div className="space-y-8 pb-32 animate-in fade-in duration-500">
-      {!activeFolder ? (
-        <div className="space-y-6">
-          <div className="flex justify-between items-end px-1">
-            <div>
-              <h2 className="text-2xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight uppercase">Library</h2>
-              <p className="text-slate-400 dark:text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Organize your collections</p>
+    <div className="space-y-5 pb-8">
+      <AnimatePresence mode="wait">
+        {!activeFolder ? (
+          <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-5">
+            {/* Header */}
+            <div className="flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">Library</h2>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest mt-0.5">Your collections</p>
+              </div>
+              <button
+                onClick={() => setIsCreating(true)}
+                className="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20 active:scale-95"
+              >
+                <Plus size={18} />
+              </button>
             </div>
-            <button 
-              onClick={() => setIsCreating(true)}
-              className="w-12 h-12 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 transition-all shadow-md shadow-blue-500/10 active:scale-95"
-            >
-              <Plus size={24} />
-            </button>
-          </div>
 
-      <AnimatePresence>
-        {isCreating && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 shadow-2xl relative border border-slate-100 dark:border-slate-800"
-            >
-              <div className="space-y-6">
-                <div className="text-center">
-                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">New Collection</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Define your space</p>
+            {/* Folder Grid */}
+            {folders.length === 0 ? (
+              <div className="py-20 text-center space-y-4 px-8">
+                <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-[22px] flex items-center justify-center mx-auto">
+                  <FolderPlus size={28} className="text-slate-300" />
                 </div>
-
-                <div className="flex flex-col items-center space-y-6">
-                  <div className={cn("w-20 h-20 rounded-[28px] flex items-center justify-center shadow-lg transition-all transform", getFolderColor(selectedColor).bg)}>
-                    <FolderPlus className={getFolderColor(selectedColor).text} size={32} />
-                  </div>
-                  
-                  <div className="w-full space-y-4">
-                    <input 
-                      autoFocus
-                      value={newFolderName}
-                      onChange={(e) => setNewFolderName(e.target.value)}
-                      placeholder="Protocol Name..."
-                      className="w-full bg-slate-50 dark:bg-slate-800 dark:text-white dark:border-slate-700 px-5 py-4 rounded-2xl text-sm font-bold focus:outline-none placeholder:text-slate-300 text-center"
-                      onKeyDown={(e) => e.key === 'Enter' && createFolder()}
-                    />
-
-                    <div className="flex justify-center space-x-3">
-                      {FOLDER_COLORS.map(color => (
-                          <button
-                            key={color.name}
-                            onClick={() => setSelectedColor(color.name)}
-                            className={cn(
-                              "w-6 h-6 rounded-full transition-all border-2",
-                              color.class,
-                              selectedColor === color.name ? "border-slate-900 dark:border-white scale-110 shadow-md" : "border-transparent"
-                            )}
-                          />
-                      ))}
-                    </div>
-                  </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">No Folders Yet</h3>
+                  <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed max-w-[200px] mx-auto">
+                    Create a folder to organize your files into collections.
+                  </p>
                 </div>
-                
-                <div className="flex flex-col space-y-3 pt-4">
-                  <button 
-                    onClick={createFolder}
-                    className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all"
-                  >
-                    Initialize Archive
-                  </button>
-                  <button 
-                    onClick={() => setIsCreating(false)}
-                    className="w-full py-2 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    Cancel Action
-                  </button>
+                <button
+                  onClick={() => setIsCreating(true)}
+                  className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-all"
+                >
+                  Create Folder
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <AnimatePresence initial={false}>
+                  {folders.map(folder => {
+                    const color = getFolderColor(folder.color);
+                    return (
+                      <motion.div
+                        key={folder.id}
+                        layout
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.95 }}
+                        onClick={() => setActiveFolder(folder)}
+                        className={cn(
+                          'bg-white border rounded-2xl p-4 cursor-pointer transition-all hover:shadow-sm hover:-translate-y-0.5 group relative',
+                          color.border
+                        )}
+                      >
+                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-transform group-hover:scale-105', color.bg)}>
+                          <FolderIcon size={20} className={color.text} />
+                        </div>
+                        <p className="text-[12px] font-bold text-slate-800 truncate pr-6 leading-snug">{folder.name}</p>
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className={cn('text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-md', color.bg, color.text)}>
+                            {folder.count} files
+                          </span>
+                          <span className="text-[9px] text-slate-400">{formatSize(folder.totalSize)}</span>
+                        </div>
+                        <p className="text-[9px] text-slate-300 mt-1.5 font-medium">{format(folder.createdAt, 'MMM d, yyyy')}</p>
+
+                        {/* Delete button */}
+                        <button
+                          onClick={e => { e.stopPropagation(); if (folder.id) setConfirmDeleteId(folder.id); }}
+                          className="absolute top-3 right-3 w-7 h-7 flex items-center justify-center rounded-lg text-slate-300 hover:text-red-400 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
+              </div>
+            )}
+          </motion.div>
+        ) : (
+          <motion.div key="folder" initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -12 }} className="space-y-5">
+            {/* Folder Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setActiveFolder(null)}
+                  className="w-9 h-9 bg-slate-100 text-slate-500 rounded-xl flex items-center justify-center hover:bg-slate-200 transition-colors active:scale-95"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <div>
+                  <h2 className="text-base font-black text-slate-900 tracking-tight uppercase leading-none">{activeFolder.name}</h2>
+                  <p className="text-[10px] text-blue-500 font-semibold mt-0.5">{folderFileCount} file{folderFileCount !== 1 ? 's' : ''}</p>
                 </div>
               </div>
+              <button
+                onClick={() => activeFolder.id && setConfirmDeleteId(activeFolder.id)}
+                className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+
+            <FilesPage activeFolderId={activeFolder.id} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Create Folder Modal */}
+      <AnimatePresence>
+        {isCreating && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-5 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.93, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.93, y: 16 }}
+              className="bg-white w-full max-w-sm rounded-[28px] p-7 shadow-2xl border border-slate-100"
+            >
+              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight text-center mb-1">New Folder</h3>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest text-center mb-6">Organize your files</p>
+
+              <div className={cn('w-16 h-16 rounded-[20px] flex items-center justify-center mx-auto mb-5 transition-all', getFolderColor(selectedColor).bg)}>
+                <FolderPlus className={getFolderColor(selectedColor).text} size={28} />
+              </div>
+
+              <input
+                autoFocus
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                placeholder="Folder name..."
+                className="w-full bg-slate-50 border border-slate-200 px-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-blue-400 placeholder:text-slate-300 text-center mb-4"
+                onKeyDown={e => e.key === 'Enter' && createFolder()}
+              />
+
+              <div className="flex justify-center gap-2.5 mb-6">
+                {FOLDER_COLORS.map(c => (
+                  <button
+                    key={c.name}
+                    onClick={() => setSelectedColor(c.name)}
+                    className={cn('w-6 h-6 rounded-full border-2 transition-all', c.class, selectedColor === c.name ? 'border-slate-800 scale-110' : 'border-transparent')}
+                  />
+                ))}
+              </div>
+
+              <button
+                onClick={createFolder}
+                className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-all mb-2"
+              >
+                Create Folder
+              </button>
+              <button
+                onClick={() => { setIsCreating(false); setNewFolderName(''); }}
+                className="w-full py-2 text-slate-400 font-semibold text-[10px] uppercase tracking-widest"
+              >
+                Cancel
+              </button>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-          <div className="grid grid-cols-2 gap-3 px-1">
-            {folders.length === 0 && !isCreating && (
-              <div className="col-span-2 py-24 text-center px-10 space-y-6">
-                <div className="relative mx-auto w-20 h-20">
-                  <div className="absolute inset-0 bg-blue-500/10 dark:bg-blue-500/5 blur-2xl rounded-full" />
-                  <div className="relative w-20 h-20 bg-slate-50 dark:bg-slate-900 rounded-[28px] flex items-center justify-center shadow-sm border border-slate-100 dark:border-slate-800">
-                    <FolderPlus size={32} className="text-slate-300 dark:text-slate-700" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">No Libraries</h3>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed max-w-[220px] mx-auto">
-                    Spaces allow you to group related nodes into logical distributed archives.
-                  </p>
-                </div>
-                <button 
-                  onClick={() => setIsCreating(true)}
-                  className="px-8 py-3 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-blue-500/20 active:scale-95 transition-all mx-auto"
-                >
-                  Create Collection
-                </button>
-              </div>
-            )}
-            {folders.map((folder) => {
-              const color = getFolderColor(folder.color);
-              return (
-                <motion.div 
-                  key={folder.id}
-                  layout
-                  onClick={() => openFolder(folder)}
-                  className="bg-white dark:bg-slate-900 p-4 rounded-2xl shadow-sm relative group cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-slate-800/80 hover:-translate-y-0.5 border border-slate-50 dark:border-transparent hover:border-blue-100"
-                >
-                  <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center mb-3 transition-transform group-hover:scale-110", color.bg, "dark:bg-slate-800")}>
-                    <FolderIcon size={20} className={color.text} fill="currentColor" fillOpacity={0.1} />
-                  </div>
-                  <h3 className="font-bold text-slate-900 dark:text-white truncate leading-tight pr-4 text-[11px] uppercase tracking-tight">{folder.name}</h3>
-                  <div className="flex flex-col space-y-1.5 mt-2.5">
-                    <div className="flex items-center space-x-2">
-                       <span className="text-[8px] font-black text-blue-500 uppercase tracking-tighter bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-md">
-                         {folder.count} Nodes
-                       </span>
-                       <span className="text-[8px] font-bold text-slate-400 uppercase">
-                         {formatSize(folder.totalSize)}
-                       </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-[8px] font-bold text-slate-300 dark:text-slate-500 uppercase tracking-[0.1em]">
-                        {format(folder.createdAt, 'MMM d')}
-                      </p>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (folder.id) deleteFolder(folder.id);
-                        }}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-90"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  </div>
-                </motion.div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between px-1">
-            <div className="flex items-center space-x-4">
-              <button 
-                onClick={() => setActiveFolder(null)}
-                className="w-10 h-10 bg-white dark:bg-slate-900 text-slate-400 rounded-xl flex items-center justify-center hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-sm border border-slate-100 dark:border-slate-800"
-              >
-                <ChevronRight className="w-5 h-5 rotate-180" />
-              </button>
-              <div>
-                <h2 className="text-xl font-extrabold font-sans text-slate-900 dark:text-white tracking-tight leading-none uppercase">{activeFolder.name}</h2>
-                <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mt-1.5">{folderFileCount} Items</p>
-              </div>
-            </div>
-            <button 
-              onClick={() => activeFolder.id && deleteFolder(activeFolder.id)}
-              className="w-12 h-12 flex items-center justify-center rounded-2xl text-slate-400 hover:text-red-500 hover:bg-red-500/10 transition-all active:scale-90 border border-transparent hover:border-red-500/20"
-              title="Delete Collection"
-            >
-              <Trash2 size={22} />
-            </button>
-          </div>
-
-          <FilesPage activeFolderId={activeFolder.id} />
-        </div>
-      )}
-
+      {/* Delete Confirm Modal */}
       <AnimatePresence>
-        {deleteStep > 0 && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        {confirmDeleteId !== null && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-5 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.93, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-[32px] p-8 shadow-2xl relative border border-slate-100 dark:border-slate-800"
+              exit={{ opacity: 0, scale: 0.93, y: 16 }}
+              className="bg-white w-full max-w-sm rounded-[28px] p-7 shadow-2xl border border-slate-100 text-center"
             >
-              <div className="text-center space-y-6">
-                <div className="w-20 h-20 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-[28px] flex items-center justify-center mx-auto">
-                   <Trash2 size={32} />
-                </div>
-                
-                <div className="space-y-2">
-                  <h3 className="text-xl font-extrabold text-slate-900 dark:text-white uppercase tracking-tight">
-                    {deleteStep === 1 ? "Archive Purge" : "Final Consent"}
-                  </h3>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed px-4">
-                    {deleteStep === 1 
-                      ? "Deleting this collection will permanently remove all archived items indexed within it. This action is atomic and irreversible."
-                      : "Are you sure? This is the final point of no return. All nodes in this space will be destroyed from local storage."}
-                  </p>
-                </div>
-
-                <div className="space-y-3 pt-2">
-                  <button 
-                    onClick={() => deleteStep === 1 ? setDeleteStep(2) : executeDelete()}
-                    className={cn(
-                      "w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95",
-                      deleteStep === 1 
-                        ? "bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-slate-900/20" 
-                        : "bg-red-600 text-white shadow-red-500/20"
-                    )}
-                  >
-                    {deleteStep === 1 ? "Next Protocol" : "Execute Purge"}
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setDeleteStep(0);
-                      setFolderIdToDelete(null);
-                    }}
-                    className="w-full py-2 text-slate-400 font-bold text-[9px] uppercase tracking-widest hover:text-slate-600 dark:hover:text-slate-200"
-                  >
-                    Abort Action
-                  </button>
-                </div>
+              <div className="w-14 h-14 bg-red-50 rounded-[18px] flex items-center justify-center mx-auto mb-5">
+                <Trash2 size={24} className="text-red-500" />
               </div>
+              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight mb-2">Delete Folder?</h3>
+              <p className="text-[12px] text-slate-500 leading-relaxed mb-6 max-w-[220px] mx-auto">
+                This will permanently delete the folder and all files inside it. This cannot be undone.
+              </p>
+              <button
+                onClick={() => executeDelete(confirmDeleteId)}
+                className="w-full py-3.5 bg-red-600 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-lg shadow-red-500/20 active:scale-95 transition-all mb-2"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirmDeleteId(null)}
+                className="w-full py-2 text-slate-400 font-semibold text-[10px] uppercase tracking-widest"
+              >
+                Cancel
+              </button>
             </motion.div>
           </div>
         )}
