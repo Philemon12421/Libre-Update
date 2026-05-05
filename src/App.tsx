@@ -1,13 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useState } from 'react';
+import { 
+  View, 
+  Text, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  ScrollView, 
+  Image,
+  StyleSheet,
+  StatusBar as RNStatusBar
+} from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { 
   FileText, 
-  FolderIcon, 
+  Folder as FolderIcon, 
   Search, 
   Settings as SettingsIcon, 
   BookOpen,
-} from 'lucide-react';
-import { cn } from './lib/utils';
+} from 'lucide-react-native';
 
 import FilesPage from './pages/Files';
 import FoldersPage from './pages/Folders';
@@ -40,66 +49,152 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto bg-white shadow-2xl relative overflow-hidden">
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="dark" />
+      
       {/* Header */}
-      <header className="px-5 pt-12 pb-3 flex items-center space-x-3 bg-white/95 backdrop-blur-xl sticky top-0 z-40 border-b border-slate-100">
-        <button onClick={() => setCurrentPage('files')} className="flex items-center space-x-3">
-          <div className="w-9 h-9 rounded-[12px] overflow-hidden shadow-md shadow-blue-500/20 transition-transform active:scale-95">
-            <img src="/favicon.svg" alt="Libre" className="w-full h-full object-cover" />
-          </div>
-          <div>
-            <h1 className="text-[17px] font-black text-slate-900 tracking-tight leading-none uppercase">Libre</h1>
-            <p className="text-[9px] font-bold text-blue-500 uppercase tracking-[0.18em] mt-0.5 leading-none">Archival Node</p>
-          </div>
-        </button>
-      </header>
+      <View style={styles.header}>
+        <TouchableOpacity 
+          onPress={() => setCurrentPage('files')} 
+          style={styles.logoContainer}
+        >
+          <View style={styles.logoBox}>
+            <Image 
+              source={{ uri: '/favicon.svg' }} 
+              style={styles.logo} 
+            />
+          </View>
+          <View>
+            <Text style={styles.title}>LIBRE</Text>
+            <Text style={styles.subtitle}>ARCHIVAL NODE</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-y-auto overscroll-contain">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentPage}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.18, ease: 'easeOut' }}
-            className="px-5 pt-5 pb-28"
-          >
-            {renderPage()}
-          </motion.div>
-        </AnimatePresence>
-      </main>
+      <View style={styles.main}>
+        {renderPage()}
+      </View>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white/95 backdrop-blur-xl border-t border-slate-100 px-2 pt-2 pb-6 flex justify-around items-center z-40">
+      <View style={styles.navBar}>
         {navigation.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
           return (
-            <button
+            <TouchableOpacity
               key={item.id}
-              onClick={() => setCurrentPage(item.id as Page)}
-              className={cn(
-                'flex flex-col items-center space-y-1 transition-all duration-200 px-2 py-1.5 rounded-xl',
-                isActive ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'
-              )}
+              onPress={() => setCurrentPage(item.id as Page)}
+              style={styles.navItem}
             >
-              <div className={cn(
-                'w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-200',
-                isActive ? 'bg-blue-50' : 'bg-transparent'
-              )}>
-                <Icon size={19} strokeWidth={isActive ? 2.5 : 1.8} />
-              </div>
-              <span className={cn(
-                'text-[9px] font-bold uppercase tracking-wider transition-all',
-                isActive ? 'opacity-100 text-blue-600' : 'opacity-50'
-              )}>
+              <View style={[
+                styles.navIconBox,
+                isActive && styles.navIconBoxActive
+              ]}>
+                <Icon 
+                  size={24} 
+                  color={isActive ? '#2563eb' : '#94a3b8'} 
+                  strokeWidth={isActive ? 2.5 : 1.8} 
+                />
+              </View>
+              <Text style={[
+                styles.navLabel,
+                isActive && styles.navLabelActive
+              ]}>
                 {item.label}
-              </span>
-            </button>
+              </Text>
+            </TouchableOpacity>
           );
         })}
-      </nav>
-    </div>
+      </View>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: RNStatusBar.currentHeight ? RNStatusBar.currentHeight + 10 : 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    backgroundColor: '#fff',
+  },
+  logoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  logoBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+    marginRight: 12,
+    overflow: 'hidden',
+  },
+  logo: {
+    width: '100%',
+    height: '100%',
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: '#0f172a',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#3b82f6',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  main: {
+    flex: 1,
+  },
+  navBar: {
+    flexDirection: 'row',
+    height: 80,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    paddingBottom: 20,
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+  },
+  navIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navIconBoxActive: {
+    backgroundColor: '#eff6ff',
+  },
+  navLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#94a3b8',
+    marginTop: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  navLabelActive: {
+    color: '#2563eb',
+  },
+});

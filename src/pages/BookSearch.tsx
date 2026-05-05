@@ -1,7 +1,18 @@
 import React, { useState } from 'react';
-import { Search, BookOpen, ExternalLink, Star, Globe, X, Loader2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../lib/utils';
+import { 
+  View, 
+  Text, 
+  TextInput, 
+  TouchableOpacity, 
+  FlatList, 
+  Image, 
+  StyleSheet, 
+  ActivityIndicator,
+  Modal,
+  ScrollView,
+  Linking
+} from 'react-native';
+import { Search, BookOpen, ExternalLink, Star, Globe, X } from 'lucide-react-native';
 
 interface BookResult {
   id: string;
@@ -106,241 +117,493 @@ export default function BookSearchPage() {
     }
   };
 
+  const renderBookItem = ({ item }: { item: BookResult }) => (
+    <TouchableOpacity 
+      style={styles.bookCard} 
+      onPress={() => setSelectedBook(item)}
+    >
+      <View style={styles.coverContainer}>
+        <Image 
+          source={{ uri: item.thumbnail }} 
+          style={styles.cover}
+          resizeMode="cover"
+        />
+        <View style={styles.sourceTag}>
+          <Text style={styles.sourceTagText}>{item.source}</Text>
+        </View>
+      </View>
+      <View style={styles.bookInfo}>
+        <Text style={styles.bookTitle} numberOfLines={2}>{item.title}</Text>
+        <View style={styles.bookMeta}>
+          <Text style={styles.bookAuthor} numberOfLines={1}>{item.authors[0]}</Text>
+          {item.rating && (
+            <View style={styles.ratingRow}>
+              <Star size={10} color="#fbbf24" fill="#fbbf24" />
+              <Text style={styles.ratingText}>{item.rating}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
-    <div className="space-y-5 pb-8">
-      {/* Header */}
-      <div>
-        <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">Discover</h2>
-        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest mt-0.5">Search books worldwide</p>
-      </div>
-
-      {/* Search Bar */}
-      <div className="space-y-3">
-        <div className="relative">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-            <Search className={cn('w-4 h-4 transition-colors', searching ? 'text-blue-500 animate-pulse' : 'text-slate-300')} />
-          </div>
-          <input
-            type="text"
+    <View style={styles.container}>
+      {/* Search Section */}
+      <View style={styles.searchSection}>
+        <View style={styles.searchBar}>
+          <Search size={18} color="#94a3b8" />
+          <TextInput
+            style={styles.searchInput}
             value={query}
-            onChange={e => setQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && searchBooks()}
+            onChangeText={setQuery}
             placeholder="Search books, authors, titles..."
-            className="w-full bg-slate-50 border border-slate-200 pl-11 pr-24 py-3.5 rounded-2xl text-sm font-medium text-slate-800 placeholder:text-slate-300 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/10 transition-all"
+            onSubmitEditing={() => searchBooks()}
+            placeholderTextColor="#cbd5e1"
           />
-          <button
-            onClick={() => searchBooks()}
-            disabled={searching || !query.trim()}
-            className="absolute right-2 top-2 bottom-2 px-4 bg-blue-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
-          >
-            {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Search'}
-          </button>
-        </div>
+          {searching ? (
+            <ActivityIndicator size="small" color="#3b82f6" />
+          ) : (
+            <TouchableOpacity 
+              onPress={() => searchBooks()}
+              disabled={!query.trim()}
+              style={[styles.searchBtn, !query.trim() && { opacity: 0.5 }]}
+            >
+              <Text style={styles.searchBtnText}>SEARCH</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-        {/* Categories Refinement */}
-        <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.categories}
+        >
           {['Fiction', 'Science', 'History', 'Tech', 'Biography', 'Philosophy'].map(cat => (
-            <button
+            <TouchableOpacity
               key={cat}
-              onClick={() => { setQuery(cat); setTimeout(() => searchBooks(cat), 10); }}
-              className="px-4 py-2 bg-white border border-slate-100 rounded-xl text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap hover:border-blue-200 transition-all active:scale-95"
+              onPress={() => { setQuery(cat); searchBooks(cat); }}
+              style={styles.categoryBtn}
             >
-              {cat}
-            </button>
+              <Text style={styles.categoryText}>{cat}</Text>
+            </TouchableOpacity>
           ))}
-        </div>
-      </div>
+        </ScrollView>
+      </View>
 
-      {/* States */}
-      {searching && (
-        <div className="py-16 flex flex-col items-center gap-3">
-          <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />
-          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Searching...</p>
-        </div>
-      )}
-
-      {!searching && hasSearched && results.length === 0 && (
-        <div className="py-16 text-center space-y-3 px-8">
-          <div className="w-14 h-14 bg-slate-50 border border-slate-100 rounded-[18px] flex items-center justify-center mx-auto">
-            <Search size={22} className="text-slate-300" />
-          </div>
-          <p className="text-sm font-bold text-slate-700">No results found</p>
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            Try different keywords or check your spelling.
-          </p>
-        </div>
-      )}
-
-      {!searching && !hasSearched && (
-        <div className="py-14 text-center space-y-5 px-8">
-          <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-[22px] flex items-center justify-center mx-auto">
-            <BookOpen size={28} className="text-slate-300" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">Find Any Book</h3>
-            <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed max-w-[200px] mx-auto">
-              Search across Google Books and Open Library simultaneously.
-            </p>
-          </div>
-          <div className="flex justify-center gap-2">
-            {['Google Books', 'Open Library', 'Gutenberg'].map(src => (
-              <div key={src} className="flex items-center gap-1.5 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl">
-                <Globe size={10} className="text-blue-400" />
-                <span className="text-[9px] font-semibold text-slate-500 uppercase">{src}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Results Grid */}
-      {!searching && results.length > 0 && (
-        <div className="grid grid-cols-2 gap-4">
-          {results.map(book => (
-            <motion.div
-              key={book.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              onClick={() => setSelectedBook(book)}
-              className="cursor-pointer group"
-            >
-              {/* Cover */}
-              <div className="aspect-[3/4] w-full rounded-2xl overflow-hidden bg-slate-100 mb-2.5 relative shadow-sm group-hover:shadow-md transition-all group-hover:-translate-y-0.5">
-                <img
-                  src={book.thumbnail}
-                  alt={book.title}
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                  onError={e => { (e.target as HTMLImageElement).src = PLACEHOLDER_COVER; }}
-                />
-                <div className="absolute top-2 right-2 px-1.5 py-0.5 bg-white/90 rounded-md text-[7px] font-bold uppercase text-slate-700 shadow-sm">
-                  {book.source}
-                </div>
-              </div>
-              {/* Info */}
-              <div className="space-y-0.5 px-0.5">
-                <p className="text-[11px] font-bold text-slate-800 line-clamp-2 leading-snug group-hover:text-blue-600 transition-colors">{book.title}</p>
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] text-slate-400 truncate max-w-[75%]">{book.authors[0]}</p>
-                  {book.rating && (
-                    <div className="flex items-center gap-0.5 text-amber-400">
-                      <Star size={8} fill="currentColor" />
-                      <span className="text-[9px] font-bold">{book.rating}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+      {/* Results List */}
+      {searching ? (
+        <View style={styles.statusBox}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.statusText}>SEARCHING...</Text>
+        </View>
+      ) : results.length > 0 ? (
+        <FlatList
+          data={results}
+          renderItem={renderBookItem}
+          keyExtractor={item => item.id}
+          numColumns={2}
+          contentContainerStyle={styles.listContent}
+          columnWrapperStyle={styles.columnWrapper}
+        />
+      ) : (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconBox}>
+            {hasSearched ? <Search size={32} color="#cbd5e1" /> : <BookOpen size={32} color="#cbd5e1" />}
+          </View>
+          <Text style={styles.emptyTitle}>{hasSearched ? 'No results found' : 'Find Any Book'}</Text>
+          <Text style={styles.emptySubtitle}>
+            {hasSearched 
+              ? 'Try different keywords or check your spelling.' 
+              : 'Search across Google Books, Open Library, and Gutenberg simultaneously.'}
+          </Text>
+        </View>
       )}
 
       {/* Book Detail Modal */}
-      <AnimatePresence>
-        {selectedBook && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedBook(null)}
-              className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ y: 60, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 60, opacity: 0 }}
-              className="bg-white w-full max-w-md rounded-t-[32px] overflow-hidden shadow-2xl z-10 relative max-h-[90vh] flex flex-col"
-            >
-              {/* Close */}
-              <button
-                onClick={() => setSelectedBook(null)}
-                className="absolute top-4 right-4 w-8 h-8 bg-slate-100 text-slate-400 hover:text-slate-700 rounded-full flex items-center justify-center z-10 transition-colors"
-              >
-                <X size={15} />
-              </button>
+      <Modal
+        visible={!!selectedBook}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setSelectedBook(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity 
+            style={styles.modalCloseArea}
+            onPress={() => setSelectedBook(null)}
+          />
+          <View style={styles.modalContent}>
+            {selectedBook && (
+              <>
+                <TouchableOpacity 
+                  style={styles.modalCloseBtn}
+                  onPress={() => setSelectedBook(null)}
+                >
+                  <X size={20} color="#94a3b8" />
+                </TouchableOpacity>
 
-              <div className="overflow-y-auto">
-                {/* Hero */}
-                <div className="relative h-52 w-full bg-slate-100">
-                  <img src={selectedBook.thumbnail} alt="" className="w-full h-full object-cover blur-xl opacity-30" />
-                  <div className="absolute inset-0 flex items-center justify-center pt-6">
-                    <div className="w-28 h-40 rounded-xl overflow-hidden shadow-2xl border-2 border-white -rotate-2">
-                      <img
-                        src={selectedBook.thumbnail}
-                        alt={selectedBook.title}
-                        className="w-full h-full object-cover"
-                        onError={e => { (e.target as HTMLImageElement).src = PLACEHOLDER_COVER; }}
-                      />
-                    </div>
-                  </div>
-                </div>
+                <ScrollView>
+                  <View style={styles.modalHero}>
+                    <Image 
+                      source={{ uri: selectedBook.thumbnail }} 
+                      style={styles.modalHeroCover}
+                    />
+                  </View>
 
-                {/* Content */}
-                <div className="p-6 pb-32">
-                  <div className="text-center mb-6">
-                    <h2 className="text-xl font-black text-slate-900 leading-tight tracking-tight px-4">{selectedBook.title}</h2>
-                    <div className="flex items-center justify-center gap-3 mt-3">
-                      <p className="text-[11px] font-bold text-blue-600 uppercase tracking-wide">{selectedBook.authors[0]}</p>
-                      {selectedBook.rating && (
-                        <div className="flex items-center gap-1 pl-3 border-l border-slate-200">
-                          <Star size={10} className="text-amber-400 fill-amber-400" />
-                          <span className="text-[10px] font-bold text-slate-700">{selectedBook.rating}</span>
-                        </div>
+                  <View style={styles.modalDetails}>
+                    <Text style={styles.modalTitle}>{selectedBook.title}</Text>
+                    <Text style={styles.modalAuthor}>{selectedBook.authors.join(', ')}</Text>
+                    
+                    <View style={styles.descriptionBox}>
+                      <Text style={styles.descriptionText}>
+                        {selectedBook.description.replace(/<[^>]*>/g, '').substring(0, 500)}
+                        {selectedBook.description.length > 500 ? '...' : ''}
+                      </Text>
+                    </View>
+
+                    <View style={styles.metaRow}>
+                      <View style={styles.metaItem}>
+                        <Text style={styles.metaLabel}>SOURCE</Text>
+                        <Text style={styles.metaValue}>{selectedBook.source}</Text>
+                      </View>
+                      {selectedBook.publishedDate && (
+                        <View style={styles.metaItem}>
+                          <Text style={styles.metaLabel}>PUBLISHED</Text>
+                          <Text style={styles.metaValue}>{selectedBook.publishedDate}</Text>
+                        </View>
                       )}
-                    </div>
-                  </div>
+                    </View>
+                  </View>
+                </ScrollView>
 
-                  {/* Description */}
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 mb-4">
-                    <p className="text-[12px] text-slate-500 leading-relaxed">
-                      {selectedBook.description.replace(/<[^>]*>/g, '').substring(0, 400)}
-                      {selectedBook.description.length > 400 ? '...' : ''}
-                    </p>
-                  </div>
-
-                  {/* Meta */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Source</p>
-                      <p className="text-[11px] font-bold text-slate-800">{selectedBook.source}</p>
-                    </div>
-                    {selectedBook.publishedDate && (
-                      <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-0.5">Published</p>
-                        <p className="text-[11px] font-bold text-slate-800">{selectedBook.publishedDate}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* CTA Footer */}
-              <div className="absolute bottom-0 inset-x-0 p-5 bg-gradient-to-t from-white via-white/98 to-transparent pt-10">
-                <div className="flex flex-col gap-2">
-                  <a
-                    href={selectedBook.previewLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 active:scale-95 transition-all"
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity 
+                    style={styles.primaryBtn}
+                    onPress={() => Linking.openURL(selectedBook.previewLink)}
                   >
-                    <BookOpen size={15} />
-                    <span>Preview Book</span>
-                  </a>
-                  <a
-                    href={selectedBook.infoLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-full py-3 bg-slate-100 text-slate-700 rounded-xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
+                    <BookOpen size={16} color="#fff" />
+                    <Text style={styles.primaryBtnText}>PREVIEW BOOK</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.secondaryBtn}
+                    onPress={() => Linking.openURL(selectedBook.infoLink)}
                   >
-                    <ExternalLink size={13} />
-                    <span>More Info</span>
-                  </a>
-                </div>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
+                    <ExternalLink size={14} color="#64748b" />
+                    <Text style={styles.secondaryBtnText}>MORE INFO</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 20,
+    backgroundColor: '#fff',
+  },
+  searchSection: {
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    height: 52,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#1e293b',
+  },
+  searchBtn: {
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  searchBtnText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  categories: {
+    marginTop: 12,
+  },
+  categoryBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    borderRadius: 12,
+    marginRight: 8,
+  },
+  categoryText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  listContent: {
+    paddingBottom: 20,
+  },
+  columnWrapper: {
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  bookCard: {
+    width: '48%',
+  },
+  coverContainer: {
+    aspectRatio: 3/4,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#f1f5f9',
+    position: 'relative',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  cover: {
+    width: '100%',
+    height: '100%',
+  },
+  sourceTag: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  sourceTagText: {
+    fontSize: 7,
+    fontWeight: '900',
+    color: '#475569',
+    textTransform: 'uppercase',
+  },
+  bookInfo: {
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  bookTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1e293b',
+    lineHeight: 14,
+  },
+  bookMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  bookAuthor: {
+    fontSize: 10,
+    color: '#94a3b8',
+    flex: 1,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  ratingText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#fbbf24',
+    marginLeft: 2,
+  },
+  statusBox: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94a3b8',
+    marginTop: 12,
+    letterSpacing: 1,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+  },
+  emptyIconBox: {
+    width: 64,
+    height: 64,
+    backgroundColor: '#f8fafc',
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 11,
+    color: '#94a3b8',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalCloseArea: {
+    flex: 1,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    minHeight: '80%',
+    paddingBottom: 40,
+  },
+  modalCloseBtn: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalHero: {
+    height: 200,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalHeroCover: {
+    width: 110,
+    height: 160,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#fff',
+    transform: [{ rotate: '-2deg' }],
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+  },
+  modalDetails: {
+    padding: 24,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f172a',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+  modalAuthor: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#3b82f6',
+    textAlign: 'center',
+    marginTop: 8,
+    textTransform: 'uppercase',
+  },
+  descriptionBox: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 16,
+    padding: 16,
+    marginTop: 20,
+  },
+  descriptionText: {
+    fontSize: 12,
+    color: '#64748b',
+    lineHeight: 18,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+    gap: 12,
+  },
+  metaItem: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    padding: 12,
+    borderRadius: 12,
+  },
+  metaLabel: {
+    fontSize: 8,
+    fontWeight: '900',
+    color: '#94a3b8',
+    letterSpacing: 1,
+  },
+  metaValue: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1e293b',
+    marginTop: 2,
+  },
+  modalFooter: {
+    padding: 24,
+    gap: 12,
+  },
+  primaryBtn: {
+    backgroundColor: '#2563eb',
+    height: 52,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    elevation: 4,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  primaryBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  secondaryBtn: {
+    backgroundColor: '#f1f5f9',
+    height: 48,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  secondaryBtnText: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+});

@@ -1,36 +1,19 @@
 {
   "expo": {
-    "name": "Libre",
-    "slug": "librev",
-    "owner": "philemon12421",
-    "extra": {
-      "eas": {
-        "projectId": "a7294b13-7e21-4313-bcb7-50bb34c00ed4"
-      }
-    },
+    "name": "Libre Archival Node",
+    "slug": "libre-archival-node",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./favicon.svg",
-    "userInterfaceStyle": "automatic",
-    "splash": {
-      "image": "./favicon.svg",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
+    "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.philemon.libre"
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./favicon.svg",
-        "backgroundColor": "#ffffff"
-      }
-    },
-    "web": {
-      "favicon": "./favicon.svg"
+      "package": "com.philemon.libre"
     }
   }
 }

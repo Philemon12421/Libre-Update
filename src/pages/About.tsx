@@ -1,117 +1,321 @@
 import React from 'react';
-import { Shield, HardDrive, Wifi, BookOpen, Github, ExternalLink } from 'lucide-react';
+import { 
+  View, 
+  Text, 
+  ScrollView, 
+  Image, 
+  StyleSheet, 
+  TouchableOpacity,
+  Linking
+} from 'react-native';
+import { Shield, HardDrive, Wifi, BookOpen, Github, ExternalLink } from 'lucide-react-native';
 
 const features = [
   {
     icon: HardDrive,
-    iconBg: 'bg-blue-50',
-    iconColor: 'text-blue-500',
+    iconBg: '#eff6ff',
+    iconColor: '#3b82f6',
     title: 'Offline First',
-    description: 'All files stored locally on your device using IndexedDB. No internet required.',
+    description: 'All files stored locally on your device using AsyncStorage. No internet required.',
   },
   {
     icon: Shield,
-    iconBg: 'bg-emerald-50',
-    iconColor: 'text-emerald-500',
+    iconBg: '#ecfdf5',
+    iconColor: '#10b981',
     title: 'Private by Default',
     description: 'Your data never leaves your device. Zero telemetry, zero tracking.',
   },
   {
     icon: Wifi,
-    iconBg: 'bg-violet-50',
-    iconColor: 'text-violet-500',
+    iconBg: '#f5f3ff',
+    iconColor: '#8b5cf6',
     title: 'Book Discovery',
     description: 'Search millions of books via Google Books and Open Library APIs.',
   },
   {
     icon: BookOpen,
-    iconBg: 'bg-amber-50',
-    iconColor: 'text-amber-500',
-    title: 'PDF Viewer',
-    description: 'Read PDFs and preview images directly in the app, no external tools needed.',
+    iconBg: '#fffbeb',
+    iconColor: '#f59e0b',
+    title: 'Private Archive',
+    description: 'Keep your digital library organized and accessible anywhere.',
   },
 ];
 
 export default function AboutPage() {
   return (
-    <div className="space-y-6 pb-8">
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
-      <div>
-        <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">About</h2>
-        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest mt-0.5">Libre Archival Node</p>
-      </div>
+      <View style={styles.header}>
+        <Text style={styles.title}>About</Text>
+        <Text style={styles.subtitle}>Libre Archival Node</Text>
+      </View>
 
       {/* App Card */}
-      <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-6 text-white text-center">
-        <div className="w-14 h-14 bg-white/20 rounded-[18px] flex items-center justify-center mx-auto mb-4 overflow-hidden">
-          <img src="/favicon.svg" alt="Libre" className="w-full h-full object-cover" />
-        </div>
-        <h3 className="text-xl font-black uppercase tracking-tight">Libre</h3>
-        <p className="text-blue-200 text-[10px] font-bold uppercase tracking-widest mt-1">Archival Node</p>
-        <p className="text-blue-100/80 text-[11px] mt-3 leading-relaxed max-w-[220px] mx-auto">
+      <View style={styles.appCard}>
+        <View style={styles.appIconBox}>
+          <Image 
+            source={{ uri: '/favicon.svg' }} 
+            style={styles.appIcon} 
+          />
+        </View>
+        <Text style={styles.appTitle}>LIBRE</Text>
+        <Text style={styles.appSubtitle}>Archival Node</Text>
+        <Text style={styles.appDescription}>
           A local-first file manager and book discovery tool. Your personal archive, offline and private.
-        </p>
-        <div className="mt-4 inline-flex items-center gap-1.5 bg-white/15 px-3 py-1.5 rounded-xl">
-          <span className="text-[10px] font-bold text-white">Version 1.0.0</span>
-        </div>
-      </div>
+        </Text>
+        <View style={styles.versionBadge}>
+          <Text style={styles.versionText}>Version 1.0.0</Text>
+        </View>
+      </View>
 
       {/* Features */}
-      <div className="space-y-1.5">
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">Features</p>
-        <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden divide-y divide-slate-50">
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Features</Text>
+        <View style={styles.card}>
           {features.map((f, i) => {
             const Icon = f.icon;
+            const isLast = i === features.length - 1;
             return (
-              <div key={i} className="flex items-start gap-3.5 p-4">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${f.iconBg}`}>
-                  <Icon size={16} className={f.iconColor} />
-                </div>
-                <div>
-                  <p className="text-[12px] font-bold text-slate-800 leading-none mb-1">{f.title}</p>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">{f.description}</p>
-                </div>
-              </div>
+              <View 
+                key={i} 
+                style={[styles.featureItem, !isLast && styles.itemBorder]}
+              >
+                <View style={[styles.iconBox, { backgroundColor: f.iconBg }]}>
+                  <Icon size={16} color={f.iconColor} />
+                </View>
+                <View style={styles.featureInfo}>
+                  <Text style={styles.featureTitle}>{f.title}</Text>
+                  <Text style={styles.featureDescription}>{f.description}</Text>
+                </View>
+              </View>
             );
           })}
-        </div>
-      </div>
+        </View>
+      </View>
 
       {/* Tech Stack */}
-      <div className="space-y-1.5">
-        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mb-2">Built With</p>
-        <div className="flex flex-wrap gap-2">
-          {['React', 'TypeScript', 'Vite', 'Tailwind CSS', 'Dexie.js', 'react-pdf', 'Framer Motion'].map(tech => (
-            <span key={tech} className="px-3 py-1.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-semibold text-slate-600">
-              {tech}
-            </span>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Built With</Text>
+        <View style={styles.techStack}>
+          {['React Native', 'Expo', 'TypeScript', 'AsyncStorage', 'Lucide Icons'].map(tech => (
+            <View key={tech} style={styles.techBadge}>
+              <Text style={styles.techText}>{tech}</Text>
+            </View>
           ))}
-        </div>
-      </div>
+        </View>
+      </View>
 
       {/* Links */}
-      <div className="bg-white border border-slate-100 rounded-2xl overflow-hidden divide-y divide-slate-50">
-        <a
-          href="https://github.com/Philemon12421"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-3.5 p-4 hover:bg-slate-50 transition-colors"
+      <View style={styles.card}>
+        <TouchableOpacity
+          onPress={() => Linking.openURL('https://github.com/Philemon12421')}
+          style={styles.linkItem}
         >
-          <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center shrink-0">
-            <Github size={16} className="text-slate-600" />
-          </div>
-          <div className="flex-1">
-            <p className="text-[12px] font-bold text-slate-800">GitHub</p>
-            <p className="text-[10px] text-slate-400">View source code</p>
-          </div>
-          <ExternalLink size={14} className="text-slate-300" />
-        </a>
-      </div>
+          <View style={styles.linkIconBox}>
+            <Github size={16} color="#475569" />
+          </View>
+          <View style={styles.linkInfo}>
+            <Text style={styles.linkTitle}>GitHub</Text>
+            <Text style={styles.linkSubtitle}>View source code</Text>
+          </View>
+          <ExternalLink size={14} color="#cbd5e1" />
+        </TouchableOpacity>
+      </View>
 
       {/* Footer */}
-      <p className="text-center text-[10px] text-slate-300 font-medium">
+      <Text style={styles.footerText}>
         Made with care · Open Source
-      </p>
-    </div>
+      </Text>
+    </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  content: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  header: {
+    marginBottom: 24,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+    textTransform: 'uppercase',
+  },
+  subtitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    marginTop: 4,
+    letterSpacing: 1,
+  },
+  appCard: {
+    backgroundColor: '#2563eb',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 24,
+    elevation: 8,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  appIconBox: {
+    width: 60,
+    height: 60,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  appIcon: {
+    width: '100%',
+    height: '100%',
+  },
+  appTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: -0.5,
+  },
+  appSubtitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#bfdbfe',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  appDescription: {
+    fontSize: 12,
+    color: '#dbeafe',
+    textAlign: 'center',
+    marginTop: 16,
+    lineHeight: 18,
+    paddingHorizontal: 20,
+  },
+  versionBadge: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+  versionText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+    paddingLeft: 4,
+  },
+  card: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  featureItem: {
+    flexDirection: 'row',
+    padding: 16,
+  },
+  itemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f8fafc',
+  },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+    marginTop: 2,
+  },
+  featureInfo: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  featureDescription: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  techStack: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  techBadge: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  techText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#64748b',
+  },
+  linkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  linkIconBox: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  linkInfo: {
+    flex: 1,
+  },
+  linkTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  linkSubtitle: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  footerText: {
+    textAlign: 'center',
+    fontSize: 10,
+    color: '#cbd5e1',
+    fontWeight: '600',
+    marginTop: 8,
+  },
+});

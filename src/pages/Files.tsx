@@ -1,25 +1,49 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useDropzone } from 'react-dropzone';
 import { 
-  FileText, Image as ImageIcon, File, Download, Trash2, Upload,
-  X, Loader2, ChevronLeft, ChevronRight, Edit2, Plus, FolderPlus
-} from 'lucide-react';
+  View, 
+  Text, 
+  TouchableOpacity, 
+  StyleSheet, 
+  FlatList, 
+  Modal, 
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Image
+} from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
+import { 
+  FileText, 
+  Image as ImageIcon, 
+  File, 
+  Download, 
+  Trash2, 
+  Upload,
+  X, 
+  ChevronRight, 
+  Edit2, 
+  Plus, 
+  FolderPlus,
+  Search,
+  ArrowUpDown,
+  BookOpen,
+  FileCode,
+  Layout
+} from 'lucide-react-native';
 import { db, LibreFile, LibreFolder } from '../lib/db';
 import { format } from 'date-fns';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../lib/utils';
-import { sendLocalNotification } from '../lib/notifications';
-import { Document, Page, pdfjs } from 'react-pdf';
 
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+type SortOption = 'newest' | 'oldest' | 'name-asc' | 'name-desc';
 
 const FOLDER_COLORS = [
-  { name: 'blue',    class: 'bg-blue-500',    bg: 'bg-blue-50',    text: 'text-blue-600' },
-  { name: 'rose',    class: 'bg-rose-500',    bg: 'bg-rose-50',    text: 'text-rose-600' },
-  { name: 'emerald', class: 'bg-emerald-500', bg: 'bg-emerald-50', text: 'text-emerald-600' },
-  { name: 'amber',   class: 'bg-amber-500',   bg: 'bg-amber-50',   text: 'text-amber-600' },
-  { name: 'violet',  class: 'bg-violet-500',  bg: 'bg-violet-50',  text: 'text-violet-600' },
+  { name: 'blue',    color: '#3b82f6', bg: '#eff6ff', border: '#dbeafe' },
+  { name: 'rose',    color: '#f43f5e', bg: '#fff1f2', border: '#ffe4e6' },
+  { name: 'emerald', color: '#10b981', bg: '#ecfdf5', border: '#d1fae5' },
+  { name: 'amber',   color: '#f59e0b', bg: '#fffbeb', border: '#fef3c7' },
+  { name: 'violet',  color: '#8b5cf6', bg: '#f5f3ff', border: '#ede9fe' },
 ];
 
 export default function FilesPage({ activeFolderId }: { activeFolderId?: number }) {
@@ -33,89 +57,136 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   const [showRenameModal, setShowRenameModal] = useState(false);
   const [editingFile, setEditingFile] = useState<LibreFile | null>(null);
   const [newFileName, setNewFileName] = useState('');
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [selectedFolderColor, setSelectedFolderColor] = useState('blue');
-  const [uploadProgress, setUploadProgress] = useState<{ name: string; progress: number } | null>(null);
-  const [numPages, setNumPages] = useState<number | null>(null);
-  const [pageNumber, setPageNumber] = useState(1);
+  const [uploading, setUploading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState<SortOption>('newest');
+  const [showSortOptions, setShowSortOptions] = useState(false);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
-    const allFiles = activeFolderId
-      ? await db.files.where('folderId').equals(activeFolderId).toArray()
-      : await db.files.orderBy('createdAt').reverse().toArray();
-    const allFolders = await db.folders.toArray();
-    setFolders(allFolders);
-    setFiles(allFiles);
-    setLoading(false);
-    setSelectedFileIds(new Set());
-  }, [activeFolderId]);
+    try {
+      let queryFetch;
+      if (activeFolderId) {
+        queryFetch = await db.files.where('folderId').equals(activeFolderId).toArray();
+      } else {
+        queryFetch = await db.files.toArray();
+      }
+
+      // Local sorting
+      const sorted = [...queryFetch].sort((a, b) => {
+        if (sortOption === 'newest') return b.createdAt - a.createdAt;
+        if (sortOption === 'oldest') return a.createdAt - b.createdAt;
+        if (sortOption === 'name-asc') return a.name.localeCompare(b.name);
+        if (sortOption === 'name-desc') return b.name.localeCompare(a.name);
+        return 0;
+      });
+
+      const allFolders = await db.folders.toArray();
+      setFolders(allFolders);
+      setFiles(sorted);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+      setSelectedFileIds(new Set());
+    }
+  }, [activeFolderId, sortOption]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
-  const stats = React.useMemo(() => {
-    const data = { pdf: { count: 0, size: 0 }, image: { count: 0, size: 0 }, doc: { count: 0, size: 0 }, other: { count: 0, size: 0 } };
-    files.forEach(f => {
-      const t = f.type.toLowerCase();
-      let cat: keyof typeof data = 'other';
-      if (t.includes('pdf')) cat = 'pdf';
-      else if (t.includes('image')) cat = 'image';
-      else if (t.includes('word') || t.includes('doc') || t.includes('presentation') || t.includes('powerpoint') || t.includes('sheet') || t.includes('excel')) cat = 'doc';
-      data[cat].count++;
-      data[cat].size += f.size || 0;
-    });
-    return data;
-  }, [files]);
+  const filteredFiles = files.filter(f => 
+    f.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    for (const file of acceptedFiles) {
-      setUploadProgress({ name: file.name, progress: 0 });
-      for (let p = 0; p <= 100; p += 25) {
-        setUploadProgress(prev => prev ? { ...prev, progress: p } : null);
-        await new Promise(r => setTimeout(r, 40));
-      }
-      await db.files.add({
-        name: file.name,
-        type: file.type || 'application/octet-stream',
-        size: file.size,
-        data: file,
-        folderId: activeFolderId,
-        createdAt: Date.now(),
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
       });
+
+      if (!result.canceled) {
+        setUploading(true);
+        const { name, size, uri, mimeType } = result.assets[0];
+        
+        // In a real app we'd move file to permanent storage
+        // const newUri = FileSystem.documentDirectory + name;
+        // await FileSystem.copyAsync({ from: uri, to: newUri });
+
+        await db.files.add({
+          id: Date.now(),
+          name,
+          type: mimeType || 'application/octet-stream',
+          size: size || 0,
+          data: uri, // Storing the URI for now
+          folderId: activeFolderId,
+          createdAt: Date.now(),
+        });
+
+        Alert.alert('Success', 'File added successfully');
+        fetchFiles();
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to pick document');
+    } finally {
+      setUploading(false);
     }
-    setUploadProgress(null);
-    sendLocalNotification('Files Added', `${acceptedFiles.length} file(s) archived.`);
-    fetchFiles();
-  }, [fetchFiles, activeFolderId]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop } as any);
-
-  const createFolder = async () => {
-    if (!newFolderName.trim()) return;
-    await db.folders.add({ name: newFolderName, createdAt: Date.now(), color: selectedFolderColor });
-    setNewFolderName(''); setSelectedFolderColor('blue'); setIsCreatingFolder(false);
-    fetchFiles();
   };
 
   const renameFile = async () => {
     if (!newFileName.trim() || !editingFile?.id) return;
     await db.files.update(editingFile.id, { name: newFileName.trim() });
-    setShowRenameModal(false); setEditingFile(null); setNewFileName('');
+    setShowRenameModal(false);
+    setEditingFile(null);
+    setNewFileName('');
     fetchFiles();
   };
 
   const deleteFile = async (id: number) => {
-    if (!confirm('Delete this file permanently?')) return;
-    await db.files.delete(id);
-    fetchFiles();
+    Alert.alert(
+      'Delete File',
+      'Are you sure you want to delete this file permanently?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            await db.files.delete(id);
+            fetchFiles();
+          }
+        }
+      ]
+    );
   };
 
   const deleteSelected = async () => {
     if (selectedFileIds.size === 0) return;
-    if (!confirm(`Delete ${selectedFileIds.size} file(s)?`)) return;
-    await Promise.all(Array.from(selectedFileIds).map(id => db.files.delete(id)));
-    setIsSelectMode(false); fetchFiles();
+    Alert.alert(
+      'Delete Selected',
+      `Delete ${selectedFileIds.size} file(s)?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            await Promise.all(Array.from(selectedFileIds).map(id => db.files.delete(id)));
+            setIsSelectMode(false);
+            fetchFiles();
+          }
+        }
+      ]
+    );
+  };
+
+  const shareFile = async (file: LibreFile) => {
+    if (!(await Sharing.isAvailableAsync())) {
+      Alert.alert('Error', 'Sharing is not available on this device');
+      return;
+    }
+    await Sharing.shareAsync(file.data);
   };
 
   const toggleSelect = (id: number) => {
@@ -124,35 +195,37 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     setSelectedFileIds(s);
   };
 
-  const selectAll = () => {
-    if (selectedFileIds.size === files.length) {
-      setSelectedFileIds(new Set());
-    } else {
-      setSelectedFileIds(new Set(files.map(f => f.id).filter((id): id is number => id !== undefined)));
-    }
-  };
-
   const moveSelected = async (folderId: number | null) => {
     if (selectedFileIds.size === 0) return;
     await Promise.all(Array.from(selectedFileIds).map(id => db.files.update(id, { folderId: folderId || undefined })));
-    setShowMoveModal(false); setIsSelectMode(false); fetchFiles();
+    setShowMoveModal(false);
+    setIsSelectMode(false);
+    fetchFiles();
   };
 
-  const getIcon = (type: string, name = '') => {
-    const t = type.toLowerCase(), n = name.toLowerCase();
-    if (t.includes('pdf') || n.endsWith('.pdf'))           return <FileText className="text-red-500" size={18} />;
-    if (t.includes('image'))                               return <ImageIcon className="text-blue-500" size={18} />;
-    if (t.includes('word') || t.includes('doc'))           return <FileText className="text-indigo-500" size={18} />;
-    if (t.includes('presentation') || t.includes('ppt'))   return <FileText className="text-orange-500" size={18} />;
-    if (t.includes('spreadsheet') || t.includes('excel'))  return <FileText className="text-emerald-500" size={18} />;
-    return <File className="text-slate-400" size={18} />;
-  };
-
-  const getFileBg = (type: string) => {
+  const getIcon = (type: string, size = 18, name = '') => {
     const t = type.toLowerCase();
-    if (t.includes('pdf'))   return 'bg-red-50';
-    if (t.includes('image')) return 'bg-blue-50';
-    return 'bg-slate-50';
+    const n = name.toLowerCase();
+    
+    if (t.includes('pdf') || n.endsWith('.pdf')) 
+      return <FileText color="#ef4444" size={size} />;
+    
+    if (t.includes('image')) 
+      return <ImageIcon color="#3b82f6" size={size} />;
+    
+    if (t.includes('text') || n.endsWith('.txt')) 
+      return <BookOpen color="#6366f1" size={size} />;
+    
+    if (t.includes('word') || n.endsWith('.doc') || n.endsWith('.docx')) 
+      return <FileText color="#2563eb" size={size} />;
+    
+    if (t.includes('sheet') || t.includes('excel') || n.endsWith('.xls') || n.endsWith('.xlsx')) 
+      return <Layout color="#10b981" size={size} />;
+    
+    if (t.includes('javascript') || t.includes('json') || t.includes('code')) 
+      return <FileCode color="#f59e0b" size={size} />;
+    
+    return <File color="#94a3b8" size={size} />;
   };
 
   const formatSize = (bytes: number) => {
@@ -162,416 +235,806 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
 
-  const getFolderColor = (colorName?: string) => FOLDER_COLORS.find(c => c.name === colorName) || FOLDER_COLORS[0];
+  const renderFile = ({ item }: { item: LibreFile }) => {
+    const isSelected = selectedFileIds.has(item.id!);
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          if (isSelectMode) toggleSelect(item.id!);
+          else setPreviewFile(item);
+        }}
+        style={[
+          styles.fileItem,
+          isSelectMode && isSelected && styles.fileItemSelected
+        ]}
+      >
+        {isSelectMode && (
+          <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
+            {isSelected && <View style={styles.checkboxInner} />}
+          </View>
+        )}
+        <View style={styles.fileIconContainer}>
+          {getIcon(item.type, 18, item.name)}
+        </View>
+        <View style={styles.fileInfo}>
+          <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+          <Text style={styles.fileMeta}>
+            {formatSize(item.size)} · {format(item.createdAt, 'MMM d, yyyy')}
+          </Text>
+        </View>
+        
+        <TouchableOpacity
+          onPress={() => {
+            setEditingFile(item);
+            setNewFileName(item.name);
+            setShowRenameModal(true);
+          }}
+          style={styles.actionBtn}
+        >
+          <Edit2 size={14} color="#94a3b8" />
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          onPress={() => deleteFile(item.id!)}
+          style={styles.actionBtn}
+        >
+          <Trash2 size={14} color="#94a3b8" />
+        </TouchableOpacity>
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <div className="space-y-5">
-      {/* Page Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-lg font-black text-slate-900 tracking-tight uppercase">Files</h2>
-          <p className="text-slate-400 text-[10px] font-semibold uppercase tracking-widest mt-0.5">Local Resource Manager</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {!isSelectMode && (
-            <button
-              onClick={() => setIsCreatingFolder(true)}
-              className="w-9 h-9 bg-slate-100 text-slate-500 rounded-xl flex items-center justify-center hover:bg-slate-200 transition-all active:scale-95"
-              title="New Folder"
-            >
-              <Plus size={16} />
-            </button>
-          )}
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.title}>Files</Text>
+          <Text style={styles.subtitle}>Resource Manager</Text>
+        </View>
+        
+        <View style={styles.headerActions}>
           {files.length > 0 && (
-            <>
-              {isSelectMode && (
-                <button
-                  onClick={selectAll}
-                  className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-[9px] font-bold uppercase tracking-widest"
-                >
-                  {selectedFileIds.size === files.length ? 'Deselect' : 'All'}
-                </button>
-              )}
-              <button
-                onClick={() => { setIsSelectMode(!isSelectMode); setSelectedFileIds(new Set()); }}
-                className={cn(
-                  'px-3 py-2 rounded-xl text-[9px] font-bold uppercase tracking-widest transition-all active:scale-95',
-                  isSelectMode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600'
-                )}
-              >
+            <TouchableOpacity
+              onPress={() => {
+                setIsSelectMode(!isSelectMode);
+                setSelectedFileIds(new Set());
+              }}
+              style={[styles.selectBtn, isSelectMode && styles.selectBtnActive]}
+            >
+              <Text style={[styles.selectBtnText, isSelectMode && styles.selectBtnTextActive]}>
                 {isSelectMode ? 'Done' : 'Select'}
-              </button>
-            </>
+              </Text>
+            </TouchableOpacity>
           )}
-        </div>
-      </div>
+        </View>
+      </View>
 
-      {/* Stats row — only show when there are files */}
-      {!activeFolderId && files.length > 0 && (
-        <div className="grid grid-cols-4 gap-2">
-          {[
-            { label: 'PDF', ...stats.pdf },
-            { label: 'IMG', ...stats.image },
-            { label: 'DOC', ...stats.doc },
-            { label: 'ETC', ...stats.other },
-          ].map(s => (
-            <div key={s.label} className="bg-slate-50 border border-slate-100 rounded-2xl p-3 text-center">
-              <div className="text-sm font-black text-slate-900">{s.count}</div>
-              <div className="text-[8px] text-blue-500 font-bold uppercase mt-0.5">{formatSize(s.size)}</div>
-              <div className="text-[8px] text-slate-400 font-semibold uppercase mt-0.5">{s.label}</div>
-            </div>
-          ))}
-        </div>
+      {/* Upload Box */}
+      <TouchableOpacity 
+        style={styles.uploadArea}
+        onPress={pickDocument}
+        disabled={uploading}
+      >
+        {uploading ? (
+          <ActivityIndicator color="#3b82f6" />
+        ) : (
+          <>
+            <View style={styles.uploadIconBox}>
+              <Upload size={20} color="#3b82f6" />
+            </View>
+            <Text style={styles.uploadText}>Tap to add files</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
+      {/* Search & Sort Row */}
+      <View style={styles.searchSortRow}>
+        <View style={styles.searchContainer}>
+          <Search size={16} color="#94a3b8" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search files..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#cbd5e1"
+          />
+          {searchQuery !== '' && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <X size={14} color="#94a3b8" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity 
+          style={styles.sortBtn}
+          onPress={() => setShowSortOptions(true)}
+        >
+          <ArrowUpDown size={16} color="#64748b" />
+          <Text style={styles.sortBtnText}>
+            {sortOption === 'newest' ? 'Newest' : 
+             sortOption === 'oldest' ? 'Oldest' : 
+             sortOption === 'name-asc' ? 'A-Z' : 'Z-A'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* List */}
+      {loading ? (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color="#94a3b8" />
+        </View>
+      ) : filteredFiles.length === 0 ? (
+        <View style={styles.emptyBox}>
+          <FileText size={32} color="#cbd5e1" />
+          <Text style={styles.emptyTitle}>{searchQuery ? 'No Results' : 'No Files Yet'}</Text>
+          <Text style={styles.emptySubtitle}>
+            {searchQuery ? 'Try a different search term' : 'Upload your first file above'}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={filteredFiles}
+          renderItem={renderFile}
+          keyExtractor={item => item.id!.toString()}
+          contentContainerStyle={styles.listContent}
+        />
       )}
 
-      {/* Drop Zone */}
-      <div
-        {...getRootProps()}
-        className={cn(
-          'relative rounded-2xl border-2 border-dashed transition-all duration-200 cursor-pointer p-7 flex flex-col items-center justify-center gap-3',
-          isDragActive
-            ? 'border-blue-400 bg-blue-50'
-            : 'border-slate-200 bg-slate-50/60 hover:border-blue-300 hover:bg-blue-50/40'
-        )}
-      >
-        <input {...getInputProps()} />
-        <div className={cn(
-          'w-10 h-10 rounded-xl flex items-center justify-center transition-all',
-          isDragActive ? 'bg-blue-100' : 'bg-white border border-slate-200'
-        )}>
-          <Upload className={cn('w-5 h-5', isDragActive ? 'text-blue-600' : 'text-slate-400')} />
-        </div>
-        <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-          {isDragActive ? 'Drop files here' : 'Click or drag to upload'}
-        </p>
-
-        <AnimatePresence>
-          {uploadProgress && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-white/95 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center gap-3 p-4 z-10"
+      {/* Bulk Actions */}
+      {isSelectMode && selectedFileIds.size > 0 && (
+        <View style={styles.bulkBar}>
+          <Text style={styles.bulkCount}>{selectedFileIds.size} SELECTED</Text>
+          <View style={styles.bulkActions}>
+            <TouchableOpacity 
+              style={styles.moveBtn}
+              onPress={() => setShowMoveModal(true)}
             >
-              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-              <p className="text-[10px] font-bold text-slate-700 uppercase tracking-tight truncate max-w-[180px]">{uploadProgress.name}</p>
-              <div className="w-32 h-1 bg-slate-100 rounded-full overflow-hidden">
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${uploadProgress.progress}%` }}
-                  className="h-full bg-blue-500 rounded-full"
+              <Text style={styles.moveBtnText}>Move</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.deleteBulkBtn}
+              onPress={deleteSelected}
+            >
+              <Text style={styles.moveBtnText}>Delete</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Preview Modal */}
+      <Modal visible={!!previewFile} animationType="slide">
+        {previewFile && (
+          <View style={styles.previewContainer}>
+            <View style={styles.previewHeader}>
+              <View style={styles.previewHeaderInfo}>
+                {getIcon(previewFile.type, 20, previewFile.name)}
+                <View style={styles.previewHeaderText}>
+                  <Text style={styles.previewFileName} numberOfLines={1}>{previewFile.name}</Text>
+                  <Text style={styles.previewFileSize}>{formatSize(previewFile.size)}</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setPreviewFile(null)}>
+                <X size={24} color="#0f172a" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.previewBody}>
+              {previewFile.type.includes('image') ? (
+                <Image 
+                  source={{ uri: previewFile.data }} 
+                  style={styles.previewImage} 
+                  resizeMode="contain"
                 />
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+              ) : (
+                <View style={styles.noPreview}>
+                  <FileText size={48} color="#cbd5e1" />
+                  <Text style={styles.noPreviewText}>Preview not supported for this type</Text>
+                  <TouchableOpacity 
+                    style={styles.openBtn}
+                    onPress={() => shareFile(previewFile)}
+                  >
+                    <Text style={styles.openBtnText}>Open with other app</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
 
-      {/* File List */}
-      <div className="space-y-1.5">
-        {loading ? (
-          <div className="py-16 flex flex-col items-center gap-3">
-            <Loader2 className="w-5 h-5 text-slate-300 animate-spin" />
-            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Loading...</p>
-          </div>
-        ) : files.length === 0 ? (
-          <div className="py-20 text-center space-y-4 px-8">
-            <div className="w-16 h-16 bg-slate-50 border border-slate-100 rounded-[22px] flex items-center justify-center mx-auto">
-              <FileText size={28} className="text-slate-300" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-tight">No Files Yet</h3>
-              <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed max-w-[200px] mx-auto">
-                Upload your first file using the area above.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <AnimatePresence initial={false}>
-            {files.map(file => (
-              <motion.div
-                key={file.id}
-                layout
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.97 }}
-                className={cn(
-                  'group flex items-center p-3 rounded-2xl border transition-all cursor-pointer',
-                  isSelectMode && file.id && selectedFileIds.has(file.id)
-                    ? 'bg-blue-50 border-blue-200'
-                    : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50'
-                )}
-                onClick={() => {
-                  if (isSelectMode && file.id) toggleSelect(file.id);
-                  else { setPreviewFile(file); setNumPages(null); setPageNumber(1); }
-                }}
+            <View style={styles.previewFooter}>
+              <TouchableOpacity 
+                style={styles.shareBtn}
+                onPress={() => shareFile(previewFile)}
               >
-                {isSelectMode && (
-                  <div className="mr-3 shrink-0">
-                    <div className={cn(
-                      'w-4 h-4 rounded border-2 flex items-center justify-center transition-all',
-                      file.id && selectedFileIds.has(file.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-300'
-                    )}>
-                      {file.id && selectedFileIds.has(file.id) && <div className="w-1.5 h-1.5 bg-white rounded-sm" />}
-                    </div>
-                  </div>
-                )}
-                <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center mr-3 shrink-0', getFileBg(file.type))}>
-                  {getIcon(file.type, file.name)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-slate-800 truncate">{file.name}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">
-                    {formatSize(file.size)} · {format(file.createdAt, 'MMM d, yyyy')}
-                  </p>
-                </div>
-                <div className={cn(
-                  "flex items-center transition-opacity shrink-0",
-                  isSelectMode ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                )}>
-                  <button
-                    onClick={e => { e.stopPropagation(); setEditingFile(file); setNewFileName(file.name); setShowRenameModal(true); }}
-                    className="p-2 text-slate-300 hover:text-blue-500 transition-colors"
-                  >
-                    <Edit2 size={13} />
-                  </button>
-                  <button
-                    onClick={e => { e.stopPropagation(); file.id && deleteFile(file.id); }}
-                    className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+                <Download size={18} color="#fff" />
+                <Text style={styles.shareBtnText}>Share / Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         )}
-      </div>
+      </Modal>
 
-      {/* Bulk Action Bar */}
-      <AnimatePresence>
-        {isSelectMode && selectedFileIds.size > 0 && (
-          <motion.div
-            initial={{ y: 80, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 80, opacity: 0 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-sm px-5 z-50"
-          >
-            <div className="bg-slate-900 text-white px-5 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest">{selectedFileIds.size} selected</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowMoveModal(true)}
-                  className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-colors"
+      {/* Sort Modal */}
+      <Modal visible={showSortOptions} transparent animationType="slide">
+        <View style={styles.bottomSheetOverlay}>
+          <View style={styles.bottomSheet}>
+            <View style={styles.handle} />
+            <Text style={styles.bottomSheetTitle}>Sort Files</Text>
+            <View style={styles.sortList}>
+              {[
+                { id: 'newest', label: 'Newest First' },
+                { id: 'oldest', label: 'Oldest First' },
+                { id: 'name-asc', label: 'Name A-Z' },
+                { id: 'name-desc', label: 'Name Z-A' },
+              ].map((opt) => (
+                <TouchableOpacity 
+                  key={opt.id}
+                  style={[styles.sortOption, sortOption === opt.id && styles.sortOptionActive]}
+                  onPress={() => {
+                    setSortOption(opt.id as SortOption);
+                    setShowSortOptions(false);
+                  }}
                 >
-                  Move
-                </button>
-                <button
-                  onClick={deleteSelected}
-                  className="px-3 py-2 bg-red-500/80 hover:bg-red-500 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Move Modal */}
-      <AnimatePresence>
-        {showMoveModal && (
-          <div className="fixed inset-0 z-[60] flex items-end justify-center">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowMoveModal(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
-            <motion.div
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
-              className="bg-white w-full max-w-md rounded-t-[32px] p-6 shadow-2xl relative z-10"
+                  <Text style={[styles.sortOptionText, sortOption === opt.id && styles.sortOptionTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity 
+              style={styles.sheetCancelBtn}
+              onPress={() => setShowSortOptions(false)}
             >
-              <div className="w-8 h-1 bg-slate-200 rounded-full mx-auto mb-5" />
-              <h3 className="text-sm font-bold text-slate-900 uppercase tracking-tight mb-4">Move to folder</h3>
-              <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                <button onClick={() => moveSelected(null)} className="w-full flex items-center p-3 rounded-xl hover:bg-slate-50 transition-colors text-left gap-3">
-                  <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center"><File size={14} className="text-slate-400" /></div>
-                  <span className="text-[12px] font-semibold text-slate-700">Root (no folder)</span>
-                </button>
-                {folders.map(folder => (
-                  <button key={folder.id} onClick={() => folder.id && moveSelected(folder.id)} className="w-full flex items-center p-3 rounded-xl hover:bg-slate-50 transition-colors text-left gap-3">
-                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center"><FolderPlus size={14} className="text-blue-500" /></div>
-                    <span className="text-[12px] font-semibold text-slate-700">{folder.name}</span>
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => setShowMoveModal(false)} className="w-full mt-4 py-3 text-slate-400 font-semibold text-[11px] uppercase tracking-widest">Cancel</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* Create Folder Modal */}
-      <AnimatePresence>
-        {isCreatingFolder && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-5 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.93, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.93, y: 16 }}
-              className="bg-white w-full max-w-sm rounded-[28px] p-7 shadow-2xl border border-slate-100"
-            >
-              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight text-center mb-1">New Folder</h3>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest text-center mb-6">Organize your files</p>
-              <div className={cn('w-16 h-16 rounded-[20px] flex items-center justify-center mx-auto mb-5 transition-all', getFolderColor(selectedFolderColor).bg)}>
-                <FolderPlus className={getFolderColor(selectedFolderColor).text} size={28} />
-              </div>
-              <input
-                autoFocus
-                value={newFolderName}
-                onChange={e => setNewFolderName(e.target.value)}
-                placeholder="Folder name..."
-                className="w-full bg-slate-50 border border-slate-200 px-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-blue-400 placeholder:text-slate-300 text-center mb-4"
-                onKeyDown={e => e.key === 'Enter' && createFolder()}
-              />
-              <div className="flex justify-center gap-2.5 mb-6">
-                {FOLDER_COLORS.map(c => (
-                  <button
-                    key={c.name}
-                    onClick={() => setSelectedFolderColor(c.name)}
-                    className={cn('w-6 h-6 rounded-full border-2 transition-all', c.class, selectedFolderColor === c.name ? 'border-slate-800 scale-110' : 'border-transparent')}
-                  />
-                ))}
-              </div>
-              <button onClick={createFolder} className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-all mb-2">
-                Create Folder
-              </button>
-              <button onClick={() => setIsCreatingFolder(false)} className="w-full py-2 text-slate-400 font-semibold text-[10px] uppercase tracking-widest">Cancel</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Rename Modal */}
-      <AnimatePresence>
-        {showRenameModal && editingFile && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-5 bg-slate-900/40 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.93, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.93, y: 16 }}
-              className="bg-white w-full max-w-sm rounded-[28px] p-7 shadow-2xl border border-slate-100"
+      <Modal visible={showRenameModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Rename File</Text>
+            <TextInput
+              style={styles.input}
+              value={newFileName}
+              onChangeText={setNewFileName}
+              autoFocus
+            />
+            <TouchableOpacity style={styles.confirmBtn} onPress={renameFile}>
+              <Text style={styles.confirmBtnText}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.cancelBtn}
+              onPress={() => { setShowRenameModal(false); setEditingFile(null); }}
             >
-              <h3 className="text-base font-black text-slate-900 uppercase tracking-tight text-center mb-1">Rename File</h3>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest text-center mb-6">Update file name</p>
-              <div className="w-16 h-16 bg-blue-50 rounded-[20px] flex items-center justify-center mx-auto mb-5">
-                {getIcon(editingFile.type)}
-              </div>
-              <input
-                autoFocus
-                value={newFileName}
-                onChange={e => setNewFileName(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 px-4 py-3.5 rounded-xl text-sm font-semibold text-slate-800 focus:outline-none focus:border-blue-400 text-center mb-5"
-                onKeyDown={e => e.key === 'Enter' && renameFile()}
-              />
-              <button onClick={renameFile} className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-all mb-2">
-                Save
-              </button>
-              <button onClick={() => { setShowRenameModal(false); setEditingFile(null); }} className="w-full py-2 text-slate-400 font-semibold text-[10px] uppercase tracking-widest">Cancel</button>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+              <Text style={styles.cancelLink}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
-      {/* File Preview Modal */}
-      <AnimatePresence>
-        {previewFile && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setPreviewFile(null)} className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
-            <motion.div
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
-              className="bg-white w-full max-w-lg rounded-t-[28px] sm:rounded-[28px] overflow-hidden shadow-2xl z-10 relative flex flex-col h-[88vh]"
+      {/* Move Modal */}
+      <Modal visible={showMoveModal} transparent animationType="slide">
+        <View style={styles.bottomSheetOverlay}>
+          <View style={styles.bottomSheet}>
+            <View style={styles.handle} />
+            <Text style={styles.bottomSheetTitle}>Move to folder</Text>
+            <ScrollView style={styles.folderList}>
+              <TouchableOpacity 
+                style={styles.folderItem}
+                onPress={() => moveSelected(null)}
+              >
+                <View style={[styles.folderIconSmall, { backgroundColor: '#f1f5f9' }]}>
+                  <File size={14} color="#94a3b8" />
+                </View>
+                <Text style={styles.folderItemName}>Root (no folder)</Text>
+              </TouchableOpacity>
+              {folders.map(f => (
+                <TouchableOpacity 
+                  key={f.id} 
+                  style={styles.folderItem}
+                  onPress={() => f.id && moveSelected(f.id)}
+                >
+                  <View style={[styles.folderIconSmall, { backgroundColor: '#eff6ff' }]}>
+                    <FolderPlus size={14} color="#3b82f6" />
+                  </View>
+                  <Text style={styles.folderItemName}>{f.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity 
+              style={styles.sheetCancelBtn}
+              onPress={() => setShowMoveModal(false)}
             >
-              {/* Preview Header */}
-              <div className="px-5 py-4 flex items-center gap-3 border-b border-slate-100">
-                <div className="w-8 h-8 bg-slate-50 rounded-lg flex items-center justify-center shrink-0">{getIcon(previewFile.type)}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[12px] font-bold text-slate-800 truncate">{previewFile.name}</p>
-                  <p className="text-[10px] text-blue-500 font-semibold">{formatSize(previewFile.size)}</p>
-                </div>
-                <button onClick={() => setPreviewFile(null)} className="w-8 h-8 bg-slate-100 text-slate-400 hover:text-slate-700 rounded-full flex items-center justify-center transition-colors">
-                  <X size={15} />
-                </button>
-              </div>
-
-              {/* Preview Body */}
-              <div className="flex-1 overflow-auto bg-slate-50 flex flex-col items-center p-4">
-                {previewFile.type.includes('image') ? (
-                  <img src={URL.createObjectURL(previewFile.data)} alt={previewFile.name} className="max-w-full h-auto rounded-xl shadow-lg" />
-                ) : previewFile.type.includes('pdf') ? (
-                  <div className="w-full flex flex-col items-center gap-4">
-                    <Document
-                      file={previewFile.data}
-                      onLoadSuccess={({ numPages }) => { setNumPages(numPages); setPageNumber(1); }}
-                      loading={<Loader2 className="w-7 h-7 text-blue-500 animate-spin mt-16" />}
-                    >
-                      <div className="shadow-xl rounded-lg overflow-hidden">
-                        <Page
-                          pageNumber={pageNumber}
-                          renderTextLayer={false}
-                          renderAnnotationLayer={false}
-                          width={Math.min(window.innerWidth - 64, 480)}
-                        />
-                      </div>
-                    </Document>
-                    {numPages && (
-                      <div className="flex items-center gap-4 bg-white border border-slate-100 px-5 py-2.5 rounded-2xl shadow-sm">
-                        <button disabled={pageNumber <= 1} onClick={() => setPageNumber(p => p - 1)} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 transition-colors">
-                          <ChevronLeft size={18} />
-                        </button>
-                        <span className="text-[11px] font-bold text-slate-700">{pageNumber} / {numPages}</span>
-                        <button disabled={pageNumber >= numPages} onClick={() => setPageNumber(p => p + 1)} className="text-slate-400 hover:text-blue-600 disabled:opacity-30 transition-colors">
-                          <ChevronRight size={18} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="py-24 text-center">
-                    <FileText size={36} className="text-slate-200 mx-auto mb-4" />
-                    <p className="text-sm font-semibold text-slate-700">Preview not available</p>
-                    <p className="text-[11px] text-slate-400 mt-1">Download the file to view it.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Preview Footer */}
-              <div className="p-4 bg-white border-t border-slate-100">
-                <button
-                  onClick={() => {
-                    const url = URL.createObjectURL(previewFile.data);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = previewFile.name; a.click();
-                  }}
-                  className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
-                >
-                  <Download size={14} />
-                  <span>Download</span>
-                </button>
-                <button
-                  onClick={() => { if (previewFile.id) { deleteFile(previewFile.id); setPreviewFile(null); } }}
-                  className="w-full py-3 bg-red-50 text-red-600 rounded-xl font-bold text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-all"
-                >
-                  <Trash2 size={14} />
-                  <span>Delete File</span>
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-    </div>
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    paddingBottom: 15,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#0f172a',
+    textTransform: 'uppercase',
+  },
+  subtitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    marginTop: 2,
+    letterSpacing: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  selectBtn: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  selectBtnActive: {
+    backgroundColor: '#0f172a',
+  },
+  selectBtnText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
+  selectBtnTextActive: {
+    color: '#fff',
+  },
+  uploadArea: {
+    margin: 20,
+    marginTop: 0,
+    height: 100,
+    borderWidth: 2,
+    borderColor: '#e2e8f0',
+    borderStyle: 'dashed',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+  },
+  uploadIconBox: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  uploadText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  searchSortRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 15,
+    gap: 10,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1e293b',
+  },
+  sortBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    gap: 6,
+  },
+  sortBtnText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
+  sortList: {
+    marginBottom: 10,
+  },
+  sortOption: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  sortOptionActive: {
+    backgroundColor: '#eff6ff',
+  },
+  sortOptionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  sortOptionTextActive: {
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  listContent: {
+    padding: 20,
+    paddingTop: 0,
+  },
+  fileItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+    borderRadius: 16,
+    marginBottom: 8,
+  },
+  fileItemSelected: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  checkbox: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+    marginRight: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxActive: {
+    borderColor: '#2563eb',
+    backgroundColor: '#2563eb',
+  },
+  checkboxInner: {
+    width: 6,
+    height: 6,
+    backgroundColor: '#fff',
+    borderRadius: 1,
+  },
+  fileIconContainer: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#f8fafc',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  fileInfo: {
+    flex: 1,
+  },
+  fileName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  fileMeta: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  actionBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingBox: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyBox: {
+    padding: 60,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#64748b',
+    marginTop: 16,
+    textTransform: 'uppercase',
+  },
+  emptySubtitle: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginTop: 4,
+  },
+  bulkBar: {
+    position: 'absolute',
+    bottom: 20,
+    left: 20,
+    right: 20,
+    backgroundColor: '#0f172a',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  bulkCount: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  bulkActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  moveBtn: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  moveBtnText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  deleteBulkBtn: {
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  previewContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+  },
+  previewHeaderInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  previewHeaderText: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  previewFileName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  previewFileSize: {
+    fontSize: 10,
+    color: '#3b82f6',
+    fontWeight: '600',
+  },
+  previewBody: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  noPreview: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  noPreviewText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748b',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  openBtn: {
+    marginTop: 24,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  openBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  previewFooter: {
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  shareBtn: {
+    backgroundColor: '#0f172a',
+    height: 54,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  shareBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0f172a',
+    textTransform: 'uppercase',
+    marginBottom: 20,
+  },
+  input: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    borderRadius: 12,
+    fontSize: 14,
+    color: '#1e293b',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  confirmBtn: {
+    backgroundColor: '#2563eb',
+    width: '100%',
+    height: 50,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  cancelLink: {
+    marginTop: 16,
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+  },
+  bottomSheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-end',
+  },
+  bottomSheet: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: 20,
+    maxHeight: '60%',
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  bottomSheetTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0f172a',
+    textTransform: 'uppercase',
+    marginBottom: 16,
+  },
+  folderList: {
+    marginBottom: 10,
+  },
+  folderItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+  },
+  folderIconSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  folderItemName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  sheetCancelBtn: {
+    marginTop: 8,
+    height: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sheetCancelText: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+  },
+  cancelBtn: {
+    padding: 4,
+  }
+});
