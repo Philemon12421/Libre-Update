@@ -58,6 +58,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   const [editingFile, setEditingFile] = useState<LibreFile | null>(null);
   const [newFileName, setNewFileName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('newest');
   const [showSortOptions, setShowSortOptions] = useState(false);
@@ -107,8 +108,21 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       if (!result.canceled) {
         setUploading(true);
+        setUploadProgress(0);
+        
         const { name, size, uri, mimeType } = result.assets[0];
         
+        // Simulate progress
+        const interval = setInterval(() => {
+          setUploadProgress(prev => {
+            if (prev >= 95) {
+              clearInterval(interval);
+              return 95;
+            }
+            return prev + 5;
+          });
+        }, 50);
+
         // In a real app we'd move file to permanent storage
         // const newUri = FileSystem.documentDirectory + name;
         // await FileSystem.copyAsync({ from: uri, to: newUri });
@@ -123,8 +137,15 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
           createdAt: Date.now(),
         });
 
-        Alert.alert('Success', 'File added successfully');
-        fetchFiles();
+        setUploadProgress(100);
+        setTimeout(() => {
+          setUploading(false);
+          setUploadProgress(0);
+          Alert.alert('Success', 'File added successfully');
+          fetchFiles();
+        }, 200);
+        
+        clearInterval(interval);
       }
     } catch (err) {
       console.error(err);
@@ -317,7 +338,13 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         disabled={uploading}
       >
         {uploading ? (
-          <ActivityIndicator color="#3b82f6" />
+          <View style={styles.progressContainer}>
+            <ActivityIndicator color="#3b82f6" />
+            <Text style={styles.progressText}>{uploadProgress}%</Text>
+            <View style={styles.progressBarBg}>
+              <View style={[styles.progressBarFill, { width: `${uploadProgress}%` }]} />
+            </View>
+          </View>
         ) : (
           <>
             <View style={styles.uploadIconBox}>
@@ -635,6 +662,29 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  progressContainer: {
+    alignItems: 'center',
+    width: '100%',
+    paddingHorizontal: 40,
+  },
+  progressText: {
+    fontSize: 12,
+    fontWeight: '900',
+    color: '#3b82f6',
+    marginTop: 8,
+  },
+  progressBarBg: {
+    width: '100%',
+    height: 4,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 2,
+    marginTop: 10,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: '#3b82f6',
   },
   searchSortRow: {
     flexDirection: 'row',

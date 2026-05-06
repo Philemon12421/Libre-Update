@@ -178,14 +178,15 @@ export default function BookSearchPage() {
           horizontal 
           showsHorizontalScrollIndicator={false}
           style={styles.categories}
+          contentContainerStyle={styles.categoriesContent}
         >
-          {['Fiction', 'Science', 'History', 'Tech', 'Biography', 'Philosophy'].map(cat => (
+          {['Fiction', 'Science', 'History', 'Classic', 'Fantasy', 'Tech', 'Art', 'Mystery', 'Medicine', 'Cooking', 'Philosophy'].map(cat => (
             <TouchableOpacity
               key={cat}
               onPress={() => { setQuery(cat); searchBooks(cat); }}
-              style={styles.categoryBtn}
+              style={[styles.categoryBtn, query === cat && styles.categoryBtnActive]}
             >
-              <Text style={styles.categoryText}>{cat}</Text>
+              <Text style={[styles.categoryText, query === cat && styles.categoryTextActive]}>{cat}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -342,21 +343,31 @@ const styles = StyleSheet.create({
   categories: {
     marginTop: 12,
   },
+  categoriesContent: {
+    paddingRight: 20,
+  },
   categoryBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#f1f5f9',
-    borderRadius: 12,
-    marginRight: 8,
+    borderRadius: 14,
+    marginRight: 10,
+  },
+  categoryBtnActive: {
+    backgroundColor: '#0f172a',
+    borderColor: '#0f172a',
   },
   categoryText: {
     fontSize: 10,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#64748b',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  categoryTextActive: {
+    color: '#fff',
   },
   listContent: {
     paddingBottom: 20,
