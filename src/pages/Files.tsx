@@ -193,7 +193,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
           text: 'Delete', 
           style: 'destructive',
           onPress: async () => {
-            await Promise.all(Array.from(selectedFileIds).map(id => db.files.delete(id)));
+            await Promise.all(Array.from(selectedFileIds).map(id => db.files.delete(id as number)));
             setIsSelectMode(false);
             fetchFiles();
           }
@@ -218,7 +218,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
   const moveSelected = async (folderId: number | null) => {
     if (selectedFileIds.size === 0) return;
-    await Promise.all(Array.from(selectedFileIds).map(id => db.files.update(id, { folderId: folderId || undefined })));
+    await Promise.all(Array.from(selectedFileIds).map(id => db.files.update(id as number, { folderId: folderId || undefined })));
     setShowMoveModal(false);
     setIsSelectMode(false);
     fetchFiles();

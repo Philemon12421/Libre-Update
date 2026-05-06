@@ -10,6 +10,21 @@ export interface LibreFile {
   createdAt: number;
 }
 
+export interface LibreBook {
+  id: number;
+  googleId: string;
+  title: string;
+  authors: string[];
+  description: string;
+  thumbnail: string;
+  publishedDate?: string;
+  categories?: string[];
+  pageCount?: number;
+  averageRating?: number;
+  language?: string;
+  createdAt: number;
+}
+
 export interface LibreFolder {
   id: number;
   name: string;
@@ -78,6 +93,11 @@ class TableMock<T extends { id?: number }> {
         count: async () => {
           const items = await this.toArray();
           return items.filter((i: any) => i[key] === value).length;
+        },
+        delete: async () => {
+          const items = await this.toArray();
+          const keep = items.filter((i: any) => i[key] !== value);
+          await AsyncStorage.setItem(this.name, JSON.stringify(keep));
         }
       })
     };
@@ -97,5 +117,6 @@ class TableMock<T extends { id?: number }> {
 
 export const db = {
   files: new TableMock<LibreFile>('files'),
-  folders: new TableMock<LibreFolder>('folders')
+  folders: new TableMock<LibreFolder>('folders'),
+  books: new TableMock<LibreBook>('books')
 };

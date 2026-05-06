@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -10,12 +10,26 @@ import {
   ActivityIndicator,
   Modal,
   ScrollView,
-  Linking
+  Linking,
+  Alert
 } from 'react-native';
-import { Search, BookOpen, ExternalLink, Star, Globe, X } from 'lucide-react-native';
+import { 
+  Search, 
+  BookOpen, 
+  ExternalLink, 
+  Star, 
+  Globe, 
+  X, 
+  Heart, 
+  Bookmark,
+  Layers,
+  FileText
+} from 'lucide-react-native';
+import { db } from '../lib/db';
 
 interface BookResult {
   id: string;
+  googleId?: string;
   title: string;
   authors: string[];
   thumbnail: string;
@@ -25,6 +39,10 @@ interface BookResult {
   source: string;
   publishedDate?: string;
   rating?: number;
+  categories?: string[];
+  pageCount?: number;
+  language?: string;
+  isSaved?: boolean;
 }
 
 const PLACEHOLDER_COVER = 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=200&h=280';
@@ -35,6 +53,23 @@ export default function BookSearchPage() {
   const [searching, setSearching] = useState(false);
   const [selectedBook, setSelectedBook] = useState<BookResult | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+  const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    loadSavedBooks();
+  }, []);
+
+  const loadSavedBooks = async () => {
+    const saved = await db.books.toArray();
+    setSavedBookIds(new Set(saved.map(b => b.googleId)));
+  };
+
+  const getHighResThumbnail = (url: string) => {
+    if (!url) return PLACEHOLDER_COVER;
+    // Replace zoom=5 or other small values with zoom=1 or 2 for Google Books
+    // Also ensure https
+    return url.replace('http:', 'https:').replace('zoom=5', 'zoom=1').replace('&edge=curl', '');
+  };
 
   const searchBooks = async (customQuery?: string) => {
     const activeQuery = customQuery || query;
@@ -58,18 +93,31 @@ export default function BookSearchPage() {
         iaRes.json()
       ]);
 
-      const googleBooks: BookResult[] = (googleData.items || []).map((item: any) => ({
-        id: `google-${item.id}`,
-        title: item.volumeInfo.title || 'Unknown Title',
-        authors: item.volumeInfo.authors || ['Unknown Author'],
-        thumbnail: item.volumeInfo.imageLinks?.thumbnail?.replace('http:', 'https:') || PLACEHOLDER_COVER,
-        description: item.volumeInfo.description || 'No description available.',
-        previewLink: item.volumeInfo.previewLink || '#',
-        infoLink: item.volumeInfo.infoLink || '#',
-        source: 'Google',
-        publishedDate: item.volumeInfo.publishedDate,
-        rating: item.volumeInfo.averageRating,
-      }));
+      const googleBooks: BookResult[] = (googleData.items || []).map((item: any) => {
+        const thumb = item.volumeInfo.imageLinks?.extraLarge || 
+                      item.volumeInfo.imageLinks?.large || 
+                      item.volumeInfo.imageLinks?.medium || 
+                      item.volumeInfo.imageLinks?.small || 
+                      item.volumeInfo.imageLinks?.thumbnail;
+        
+        return {
+          id: `google-${item.id}`,
+          googleId: item.id,
+          title: item.volumeInfo.title || 'Unknown Title',
+          authors: item.volumeInfo.authors || ['Unknown Author'],
+          thumbnail: getHighResThumbnail(thumb || PLACEHOLDER_COVER),
+          description: item.volumeInfo.description || 'No description available.',
+          previewLink: item.volumeInfo.previewLink || '#',
+          infoLink: item.volumeInfo.infoLink || '#',
+          source: 'Google',
+          publishedDate: item.volumeInfo.publishedDate,
+          rating: item.volumeInfo.averageRating,
+          categories: item.volumeInfo.categories,
+          pageCount: item.volumeInfo.pageCount,
+          language: item.volumeInfo.language,
+          isSaved: savedBookIds.has(item.id)
+        };
+      });
 
       const olBooks: BookResult[] = (olData.docs || []).slice(0, 10).map((item: any) => ({
         id: `ol-${item.key}`,
@@ -117,35 +165,84 @@ export default function BookSearchPage() {
     }
   };
 
-  const renderBookItem = ({ item }: { item: BookResult }) => (
-    <TouchableOpacity 
-      style={styles.bookCard} 
-      onPress={() => setSelectedBook(item)}
-    >
-      <View style={styles.coverContainer}>
-        <Image 
-          source={{ uri: item.thumbnail }} 
-          style={styles.cover}
-          resizeMode="cover"
-        />
-        <View style={styles.sourceTag}>
-          <Text style={styles.sourceTagText}>{item.source}</Text>
-        </View>
-      </View>
-      <View style={styles.bookInfo}>
-        <Text style={styles.bookTitle} numberOfLines={2}>{item.title}</Text>
-        <View style={styles.bookMeta}>
-          <Text style={styles.bookAuthor} numberOfLines={1}>{item.authors[0]}</Text>
-          {item.rating && (
-            <View style={styles.ratingRow}>
-              <Star size={10} color="#fbbf24" fill="#fbbf24" />
-              <Text style={styles.ratingText}>{item.rating}</Text>
+  const saveBook = async (book: BookResult) => {
+    try {
+      if (savedBookIds.has(book.googleId || book.id)) {
+        // Unsave
+        const allSaved = await db.books.toArray();
+        const bookToDelete = allSaved.find(b => b.googleId === (book.googleId || book.id));
+        if (bookToDelete?.id) {
+          await db.books.delete(bookToDelete.id);
+          const next = new Set(savedBookIds);
+          next.delete(book.googleId || book.id);
+          setSavedBookIds(next);
+          loadSavedBooks();
+        }
+        return;
+      }
+
+      await db.books.add({
+        id: Date.now(),
+        googleId: book.googleId || book.id,
+        title: book.title,
+        authors: book.authors,
+        description: book.description,
+        thumbnail: book.thumbnail,
+        publishedDate: book.publishedDate,
+        categories: book.categories,
+        pageCount: book.pageCount,
+        averageRating: book.rating,
+        language: book.language,
+        createdAt: Date.now(),
+      });
+
+      const next = new Set(savedBookIds);
+      next.add(book.googleId || book.id);
+      setSavedBookIds(next);
+      Alert.alert('Saved', 'Book added to your library');
+    } catch (err) {
+      console.error('Failed to save book', err);
+      Alert.alert('Error', 'Could not save book');
+    }
+  };
+
+  const renderBookItem = ({ item }: { item: BookResult }) => {
+    const isSaved = savedBookIds.has(item.googleId || item.id);
+    return (
+      <TouchableOpacity 
+        style={styles.bookCard} 
+        onPress={() => setSelectedBook(item)}
+      >
+        <View style={styles.coverContainer}>
+          <Image 
+            source={{ uri: item.thumbnail }} 
+            style={styles.cover}
+            resizeMode="cover"
+          />
+          <View style={styles.sourceTag}>
+            <Text style={styles.sourceTagText}>{item.source}</Text>
+          </View>
+          {isSaved && (
+            <View style={styles.savedBadge}>
+              <Heart size={10} color="#fff" fill="#fff" />
             </View>
           )}
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+        <View style={styles.bookInfo}>
+          <Text style={styles.bookTitle} numberOfLines={2}>{item.title}</Text>
+          <View style={styles.bookMeta}>
+            <Text style={styles.bookAuthor} numberOfLines={1}>{item.authors[0]}</Text>
+            {item.rating && (
+              <View style={styles.ratingRow}>
+                <Star size={10} color="#fbbf24" fill="#fbbf24" />
+                <Text style={styles.ratingText}>{item.rating}</Text>
+              </View>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -255,6 +352,45 @@ export default function BookSearchPage() {
                     <Text style={styles.modalTitle}>{selectedBook.title}</Text>
                     <Text style={styles.modalAuthor}>{selectedBook.authors.join(', ')}</Text>
                     
+                    {selectedBook.categories && (
+                      <View style={styles.categoriesRow}>
+                        {selectedBook.categories.slice(0, 3).map((cat, i) => (
+                          <View key={i} style={styles.categoryBadge}>
+                            <Text style={styles.categoryBadgeText}>{cat}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    <View style={styles.ratingSection}>
+                      {selectedBook.rating ? (
+                        <View style={styles.ratingBadge}>
+                          <Star size={14} color="#fbbf24" fill="#fbbf24" />
+                          <Text style={styles.ratingValue}>{selectedBook.rating}</Text>
+                          <Text style={styles.ratingMax}>/ 5</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.ratingBadge}>
+                          <Star size={14} color="#e2e8f0" />
+                          <Text style={styles.ratingValue}>N/A</Text>
+                        </View>
+                      )}
+                      
+                      {selectedBook.pageCount && (
+                        <View style={styles.metaBadge}>
+                          <Layers size={14} color="#64748b" />
+                          <Text style={styles.metaBadgeText}>{selectedBook.pageCount} Pages</Text>
+                        </View>
+                      )}
+
+                      {selectedBook.language && (
+                        <View style={styles.metaBadge}>
+                          <Globe size={14} color="#64748b" />
+                          <Text style={styles.metaBadgeText}>{selectedBook.language.toUpperCase()}</Text>
+                        </View>
+                      )}
+                    </View>
+
                     <View style={styles.descriptionBox}>
                       <Text style={styles.descriptionText}>
                         {selectedBook.description.replace(/<[^>]*>/g, '').substring(0, 500)}
@@ -279,19 +415,41 @@ export default function BookSearchPage() {
 
                 <View style={styles.modalFooter}>
                   <TouchableOpacity 
-                    style={styles.primaryBtn}
-                    onPress={() => Linking.openURL(selectedBook.previewLink)}
+                    style={[
+                      styles.saveBtn, 
+                      savedBookIds.has(selectedBook.googleId || selectedBook.id) && styles.saveBtnActive
+                    ]}
+                    onPress={() => saveBook(selectedBook)}
                   >
-                    <BookOpen size={16} color="#fff" />
-                    <Text style={styles.primaryBtnText}>PREVIEW BOOK</Text>
+                    <Heart 
+                      size={18} 
+                      color={savedBookIds.has(selectedBook.googleId || selectedBook.id) ? "#fff" : "#2563eb"} 
+                      fill={savedBookIds.has(selectedBook.googleId || selectedBook.id) ? "#fff" : "transparent"} 
+                    />
+                    <Text style={[
+                      styles.saveBtnText,
+                      savedBookIds.has(selectedBook.googleId || selectedBook.id) && styles.saveBtnTextActive
+                    ]}>
+                      {savedBookIds.has(selectedBook.googleId || selectedBook.id) ? 'SAVED TO LIBRARY' : 'SAVE TO LIBRARY'}
+                    </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.secondaryBtn}
-                    onPress={() => Linking.openURL(selectedBook.infoLink)}
-                  >
-                    <ExternalLink size={14} color="#64748b" />
-                    <Text style={styles.secondaryBtnText}>MORE INFO</Text>
-                  </TouchableOpacity>
+
+                  <View style={styles.footerActionGroup}>
+                    <TouchableOpacity 
+                      style={styles.primaryBtn}
+                      onPress={() => Linking.openURL(selectedBook.previewLink)}
+                    >
+                      <BookOpen size={16} color="#fff" />
+                      <Text style={styles.primaryBtnText}>PREVIEW</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={styles.secondaryBtn}
+                      onPress={() => Linking.openURL(selectedBook.infoLink)}
+                    >
+                      <ExternalLink size={14} color="#64748b" />
+                      <Text style={styles.secondaryBtnText}>FULL INFO</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </>
             )}
@@ -409,6 +567,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#475569',
     textTransform: 'uppercase',
+  },
+  savedBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#ef4444',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   bookInfo: {
     marginTop: 8,
@@ -544,6 +718,68 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textTransform: 'uppercase',
   },
+  categoriesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+  },
+  categoryBadge: {
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#dbeafe',
+  },
+  categoryBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#2563eb',
+    textTransform: 'uppercase',
+  },
+  ratingSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20,
+  },
+  ratingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 6,
+  },
+  ratingValue: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#0f172a',
+  },
+  ratingMax: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginLeft: -4,
+  },
+  metaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    gap: 6,
+  },
+  metaBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+  },
   descriptionBox: {
     backgroundColor: '#f8fafc',
     borderRadius: 16,
@@ -580,21 +816,45 @@ const styles = StyleSheet.create({
   },
   modalFooter: {
     padding: 24,
-    gap: 12,
+    gap: 16,
+  },
+  saveBtn: {
+    backgroundColor: '#eff6ff',
+    height: 56,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderWidth: 2,
+    borderColor: '#dbeafe',
+  },
+  saveBtnActive: {
+    backgroundColor: '#2563eb',
+    borderColor: '#2563eb',
+  },
+  saveBtnText: {
+    color: '#2563eb',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  saveBtnTextActive: {
+    color: '#fff',
+  },
+  footerActionGroup: {
+    flexDirection: 'row',
+    gap: 10,
   },
   primaryBtn: {
-    backgroundColor: '#2563eb',
+    flex: 1.5,
+    backgroundColor: '#0f172a',
     height: 52,
     borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    elevation: 4,
-    shadowColor: '#2563eb',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
   primaryBtnText: {
     color: '#fff',
@@ -603,8 +863,9 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   secondaryBtn: {
+    flex: 1,
     backgroundColor: '#f1f5f9',
-    height: 48,
+    height: 52,
     borderRadius: 14,
     flexDirection: 'row',
     alignItems: 'center',

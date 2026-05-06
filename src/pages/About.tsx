@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   Linking
 } from 'react-native';
-import { Shield, HardDrive, Wifi, BookOpen, Github, ExternalLink } from 'lucide-react-native';
+import { Shield, HardDrive, Wifi, BookOpen, ExternalLink } from 'lucide-react-native';
 
 const features = [
   {
@@ -112,7 +112,7 @@ export default function AboutPage() {
           style={styles.linkItem}
         >
           <View style={styles.linkIconBox}>
-            <Github size={16} color="#475569" />
+            <BookOpen size={16} color="#475569" />
           </View>
           <View style={styles.linkInfo}>
             <Text style={styles.linkTitle}>GitHub</Text>
