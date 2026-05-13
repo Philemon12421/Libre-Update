@@ -14,6 +14,11 @@
     },
     "android": {
       "package": "com.philemon.libre"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "8ca44671-1f06-445e-bc61-e083d5a41bec"
+      }
     }
   }
 }
