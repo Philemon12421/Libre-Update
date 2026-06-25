@@ -23,6 +23,7 @@ import FoldersPage from './pages/Folders';
 import BookSearch from './pages/BookSearch';
 import SettingsPage from './pages/Settings';
 import AboutPage from './pages/About';
+import Logo from './components/Logo';
 
 type Page = 'files' | 'folders' | 'search' | 'settings' | 'about';
 
@@ -58,11 +59,8 @@ export default function App() {
           onPress={() => setCurrentPage('files')} 
           style={styles.logoContainer}
         >
-          <View style={styles.logoBox}>
-            <Image 
-              source={{ uri: '/favicon.svg' }} 
-              style={styles.logo} 
-            />
+          <View style={{ marginRight: 12 }}>
+            <Logo size={36} />
           </View>
           <View>
             <Text style={styles.title}>LIBRE</Text>

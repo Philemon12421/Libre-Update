@@ -71,35 +71,17 @@ export default function BookSearchPage() {
     return url.replace('http:', 'https:').replace('zoom=5', 'zoom=1').replace('&edge=curl', '');
   };
 
-  const searchBooks = async (customQuery?: string) => {
-    const activeQuery = customQuery || query;
-    if (!activeQuery.trim()) return;
-    setSearching(true);
-    setResults([]);
-    setHasSearched(true);
-
+  const fetchGoogleBooks = async (q: string): Promise<BookResult[]> => {
     try {
-      const [googleRes, olRes, gutenRes, iaRes] = await Promise.all([
-        fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(activeQuery)}&maxResults=10`),
-        fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(activeQuery)}&limit=10`),
-        fetch(`https://gutendex.com/books/?search=${encodeURIComponent(activeQuery)}`),
-        fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(activeQuery)}+AND+mediatype:texts&output=json&rows=10`),
-      ]);
-
-      const [googleData, olData, gutenData, iaData] = await Promise.all([
-        googleRes.json(), 
-        olRes.json(),
-        gutenRes.json(),
-        iaRes.json()
-      ]);
-
-      const googleBooks: BookResult[] = (googleData.items || []).map((item: any) => {
+      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=10`);
+      if (!res.ok) throw new Error('Failed to fetch Google Books');
+      const data = await res.json();
+      return (data.items || []).map((item: any) => {
         const thumb = item.volumeInfo.imageLinks?.extraLarge || 
                       item.volumeInfo.imageLinks?.large || 
                       item.volumeInfo.imageLinks?.medium || 
                       item.volumeInfo.imageLinks?.small || 
                       item.volumeInfo.imageLinks?.thumbnail;
-        
         return {
           id: `google-${item.id}`,
           googleId: item.id,
@@ -118,8 +100,18 @@ export default function BookSearchPage() {
           isSaved: savedBookIds.has(item.id)
         };
       });
+    } catch (e) {
+      console.warn('Google Books failed:', e);
+      return [];
+    }
+  };
 
-      const olBooks: BookResult[] = (olData.docs || []).slice(0, 10).map((item: any) => ({
+  const fetchOpenLibrary = async (q: string): Promise<BookResult[]> => {
+    try {
+      const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=10`);
+      if (!res.ok) throw new Error('Failed to fetch Open Library');
+      const data = await res.json();
+      return (data.docs || []).slice(0, 10).map((item: any) => ({
         id: `ol-${item.key}`,
         title: item.title || 'Unknown Title',
         authors: item.author_name || ['Unknown Author'],
@@ -132,20 +124,40 @@ export default function BookSearchPage() {
         source: 'OpenLib',
         publishedDate: item.first_publish_year?.toString(),
       }));
+    } catch (e) {
+      console.warn('Open Library failed:', e);
+      return [];
+    }
+  };
 
-      const gutenBooks: BookResult[] = (gutenData.results || []).slice(0, 10).map((item: any) => ({
+  const fetchGutenberg = async (q: string): Promise<BookResult[]> => {
+    try {
+      const res = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}`);
+      if (!res.ok) throw new Error('Failed to fetch Gutenberg');
+      const data = await res.json();
+      return (data.results || []).slice(0, 10).map((item: any) => ({
         id: `guten-${item.id}`,
         title: item.title || 'Unknown Title',
-        authors: item.authors.map((a: any) => a.name) || ['Public Domain'],
-        thumbnail: item.formats['image/jpeg'] || PLACEHOLDER_COVER,
-        description: `Download count: ${item.download_count}. Languages: ${item.languages.join(', ')}.`,
-        previewLink: item.formats['text/html'] || item.formats['text/plain'] || '#',
+        authors: item.authors?.map((a: any) => a.name) || ['Public Domain'],
+        thumbnail: item.formats?.['image/jpeg'] || PLACEHOLDER_COVER,
+        description: `Download count: ${item.download_count || 0}. Languages: ${(item.languages || []).join(', ')}.`,
+        previewLink: item.formats?.['text/html'] || item.formats?.['text/plain'] || '#',
         infoLink: `https://www.gutenberg.org/ebooks/${item.id}`,
         source: 'Gutenberg',
         publishedDate: 'Public Domain',
       }));
+    } catch (e) {
+      console.warn('Gutenberg failed:', e);
+      return [];
+    }
+  };
 
-      const iaBooks: BookResult[] = (iaData.response.docs || []).map((item: any) => ({
+  const fetchArchiveOrg = async (q: string): Promise<BookResult[]> => {
+    try {
+      const res = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+AND+mediatype:texts&output=json&rows=10`);
+      if (!res.ok) throw new Error('Failed to fetch Archive.org');
+      const data = await res.json();
+      return (data.response?.docs || []).map((item: any) => ({
         id: `ia-${item.identifier}`,
         title: item.title || 'Unknown Title',
         authors: [item.creator || 'Unknown Creator'],
@@ -156,6 +168,26 @@ export default function BookSearchPage() {
         source: 'Archive.org',
         publishedDate: item.date,
       }));
+    } catch (e) {
+      console.warn('Archive.org failed:', e);
+      return [];
+    }
+  };
+
+  const searchBooks = async (customQuery?: string) => {
+    const activeQuery = customQuery || query;
+    if (!activeQuery.trim()) return;
+    setSearching(true);
+    setResults([]);
+    setHasSearched(true);
+
+    try {
+      const [googleBooks, olBooks, gutenBooks, iaBooks] = await Promise.all([
+        fetchGoogleBooks(activeQuery),
+        fetchOpenLibrary(activeQuery),
+        fetchGutenberg(activeQuery),
+        fetchArchiveOrg(activeQuery),
+      ]);
 
       setResults([...googleBooks, ...olBooks, ...gutenBooks, ...iaBooks]);
     } catch (err) {

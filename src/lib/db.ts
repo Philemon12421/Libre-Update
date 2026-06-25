@@ -66,6 +66,10 @@ class TableMock<T extends { id?: number }> {
     await AsyncStorage.setItem(this.name, JSON.stringify(items.filter(i => i.id !== id)));
   }
 
+  async clear(): Promise<void> {
+    await AsyncStorage.removeItem(this.name);
+  }
+
   async update(id: number, changes: Partial<T>): Promise<number> {
     const items = await this.toArray();
     const index = items.findIndex(i => i.id === id);

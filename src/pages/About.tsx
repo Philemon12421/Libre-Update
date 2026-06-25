@@ -9,6 +9,7 @@ import {
   Linking
 } from 'react-native';
 import { Shield, HardDrive, Wifi, BookOpen, ExternalLink } from 'lucide-react-native';
+import Logo from '../components/Logo';
 
 const features = [
   {
@@ -52,11 +53,8 @@ export default function AboutPage() {
 
       {/* App Card */}
       <View style={styles.appCard}>
-        <View style={styles.appIconBox}>
-          <Image 
-            source={{ uri: '/favicon.svg' }} 
-            style={styles.appIcon} 
-          />
+        <View style={{ marginBottom: 16 }}>
+          <Logo size={60} />
         </View>
         <Text style={styles.appTitle}>LIBRE</Text>
         <Text style={styles.appSubtitle}>Archival Node</Text>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,9 +6,12 @@ import {
   StyleSheet, 
   Modal, 
   ScrollView,
-  Switch
+  Switch,
+  Platform,
+  PermissionsAndroid,
+  Alert
 } from 'react-native';
-import { Bell, Database, Trash2, Shield, ChevronRight } from 'lucide-react-native';
+import { Bell, Database, Trash2, Shield, ChevronRight, Lock } from 'lucide-react-native';
 import { db } from '../lib/db';
 
 interface SettingsPageProps {
@@ -20,14 +23,85 @@ export default function SettingsPage({ isDark, setIsDark }: SettingsPageProps) {
   const [confirmClear, setConfirmClear] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [notifications, setNotifications] = useState(true);
+  const [storagePermissionStatus, setStoragePermissionStatus] = useState<string>('unknown');
+  const [notificationPermissionStatus, setNotificationPermissionStatus] = useState<string>('unknown');
+
+  const checkPermissions = async () => {
+    if (Platform.OS === 'web') {
+      if ('Notification' in window) {
+        setNotificationPermissionStatus(Notification.permission);
+      } else {
+        setNotificationPermissionStatus('unsupported');
+      }
+      setStoragePermissionStatus('granted');
+    } else {
+      if (Platform.OS === 'android') {
+        const hasRead = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE);
+        const hasWrite = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE);
+        setStoragePermissionStatus(hasRead && hasWrite ? 'granted' : 'denied');
+      } else {
+        setStoragePermissionStatus('granted');
+      }
+      setNotificationPermissionStatus('granted');
+    }
+  };
+
+  useEffect(() => {
+    checkPermissions();
+  }, []);
+
+  const requestStoragePermission = async () => {
+    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+        ]);
+        const readGranted = granted['android.permission.READ_EXTERNAL_STORAGE'] === PermissionsAndroid.RESULTS.GRANTED;
+        const writeGranted = granted['android.permission.WRITE_EXTERNAL_STORAGE'] === PermissionsAndroid.RESULTS.GRANTED;
+        setStoragePermissionStatus(readGranted && writeGranted ? 'granted' : 'denied');
+        if (readGranted && writeGranted) {
+          Alert.alert('Permission Granted', 'Storage access has been allowed.');
+        } else {
+          Alert.alert('Permission Denied', 'Storage access is required to export files.');
+        }
+      } catch (err) {
+        console.warn(err);
+      }
+    } else {
+      setStoragePermissionStatus('granted');
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    if (Platform.OS === 'web') {
+      if ('Notification' in window) {
+        const result = await Notification.requestPermission();
+        setNotificationPermissionStatus(result);
+        setNotifications(result === 'granted');
+      }
+    } else {
+      Alert.alert('Notifications Enabled', 'Notifications have been activated for the archive node.');
+      setNotificationPermissionStatus('granted');
+      setNotifications(true);
+    }
+  };
 
   const clearAllData = async () => {
-    await db.files.delete(0); // This is a mock delete, but you get the idea
-    // In our TableMock we'd need a clear() method.
-    // For now let's just mock success.
-    setConfirmClear(false);
-    setCleared(true);
-    setTimeout(() => setCleared(false), 3000);
+    try {
+      await Promise.all([
+        db.files.clear(),
+        db.folders.clear(),
+        db.books.clear(),
+      ]);
+      setConfirmClear(false);
+      setCleared(true);
+      setTimeout(() => setCleared(false), 3000);
+    } catch (e) {
+      console.error('Failed to clear data', e);
+      Alert.alert('Error', 'Failed to clear all local data.');
+    }
   };
 
   const sections = [
@@ -71,6 +145,57 @@ export default function SettingsPage({ isDark, setIsDark }: SettingsPageProps) {
           action: <ChevronRight size={16} color="#cbd5e1" />,
           onTap: () => setConfirmClear(true),
           danger: true,
+        },
+      ],
+    },
+    {
+      title: 'Permissions',
+      items: [
+        {
+          icon: Lock,
+          iconBg: '#fff7ed',
+          iconColor: '#f97316',
+          label: 'Storage Permission',
+          description: `Status: ${storagePermissionStatus.toUpperCase()}`,
+          action: (
+            <TouchableOpacity 
+              style={[
+                styles.permBtn,
+                storagePermissionStatus === 'granted' && styles.permBtnDisabled
+              ]}
+              onPress={requestStoragePermission}
+              disabled={storagePermissionStatus === 'granted' || Platform.OS === 'web'}
+            >
+              {storagePermissionStatus === 'granted' ? (
+                <Text style={styles.permBtnTextGranted}>Allowed</Text>
+              ) : (
+                <Text style={styles.permBtnText}>Request</Text>
+              )}
+            </TouchableOpacity>
+          ),
+        },
+        {
+          icon: Bell,
+          iconBg: '#eff6ff',
+          iconColor: '#3b82f6',
+          label: 'Notification Access',
+          description: `Status: ${notificationPermissionStatus.toUpperCase()}`,
+          action: (
+            <TouchableOpacity 
+              style={[
+                styles.permBtn,
+                notificationPermissionStatus === 'granted' && styles.permBtnDisabled
+              ]}
+              onPress={requestNotificationPermission}
+              disabled={notificationPermissionStatus === 'granted' || notificationPermissionStatus === 'unsupported'}
+            >
+              {notificationPermissionStatus === 'granted' ? (
+                <Text style={styles.permBtnTextGranted}>Allowed</Text>
+              ) : (
+                <Text style={styles.permBtnText}>Request</Text>
+              )}
+            </TouchableOpacity>
+          ),
         },
       ],
     },
@@ -358,5 +483,30 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  permBtn: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  permBtnDisabled: {
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  permBtnText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  permBtnTextGranted: {
+    color: '#059669',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
 });

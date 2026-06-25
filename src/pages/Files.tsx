@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Image
+  Image,
+  Platform
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
@@ -62,6 +63,8 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('newest');
   const [showSortOptions, setShowSortOptions] = useState(false);
+  const [textContent, setTextContent] = useState<string>('');
+  const [loadingText, setLoadingText] = useState(false);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
@@ -95,6 +98,48 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
+  useEffect(() => {
+    if (previewFile) {
+      const loadTextContent = async () => {
+        const ext = previewFile.name.split('.').pop()?.toLowerCase();
+        const t = previewFile.type.toLowerCase();
+        const isText = t.includes('text') || t.includes('json') || t.includes('javascript') || t.includes('xml') ||
+          ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
+
+        if (isText) {
+          setLoadingText(true);
+          setTextContent('');
+          try {
+            if (Platform.OS === 'web') {
+              if (previewFile.data.startsWith('data:')) {
+                const base64Content = previewFile.data.split(',')[1];
+                const binString = atob(base64Content);
+                const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
+                const decoded = new TextDecoder().decode(bytes);
+                setTextContent(decoded);
+              } else {
+                const response = await fetch(previewFile.data);
+                const text = await response.text();
+                setTextContent(text);
+              }
+            } else {
+              const content = await FileSystem.readAsStringAsync(previewFile.data);
+              setTextContent(content);
+            }
+          } catch (err) {
+            console.error('Failed to read text file', err);
+            setTextContent('Error reading file content.');
+          } finally {
+            setLoadingText(false);
+          }
+        }
+      };
+      loadTextContent();
+    } else {
+      setTextContent('');
+    }
+  }, [previewFile]);
+
   const filteredFiles = files.filter(f => 
     f.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -123,16 +168,39 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
           });
         }, 50);
 
-        // In a real app we'd move file to permanent storage
-        // const newUri = FileSystem.documentDirectory + name;
-        // await FileSystem.copyAsync({ from: uri, to: newUri });
+        let finalUri = uri;
+        if (Platform.OS !== 'web') {
+          const permanentDirectory = FileSystem.documentDirectory + 'libre_files/';
+          const dirInfo = await FileSystem.getInfoAsync(permanentDirectory);
+          if (!dirInfo.exists) {
+            await FileSystem.makeDirectoryAsync(permanentDirectory, { intermediates: true });
+          }
+          finalUri = permanentDirectory + Date.now() + '_' + name;
+          await FileSystem.copyAsync({ from: uri, to: finalUri });
+        } else {
+          if (size && size < 2 * 1024 * 1024) {
+            try {
+              const response = await fetch(uri);
+              const blob = await response.blob();
+              const base64Promise = new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              finalUri = await base64Promise;
+            } catch (err) {
+              console.warn('Web base64 conversion failed, using temp URI', err);
+            }
+          }
+        }
 
         await db.files.add({
           id: Date.now(),
           name,
           type: mimeType || 'application/octet-stream',
           size: size || 0,
-          data: uri, // Storing the URI for now
+          data: finalUri,
           folderId: activeFolderId,
           createdAt: Date.now(),
         });
@@ -453,16 +521,38 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                   resizeMode="contain"
                 />
               ) : (
-                <View style={styles.noPreview}>
-                  <FileText size={48} color="#cbd5e1" />
-                  <Text style={styles.noPreviewText}>Preview not supported for this type</Text>
-                  <TouchableOpacity 
-                    style={styles.openBtn}
-                    onPress={() => shareFile(previewFile)}
-                  >
-                    <Text style={styles.openBtnText}>Open with other app</Text>
-                  </TouchableOpacity>
-                </View>
+                (() => {
+                  const ext = previewFile.name.split('.').pop()?.toLowerCase();
+                  const t = previewFile.type.toLowerCase();
+                  const isText = t.includes('text') || t.includes('json') || t.includes('javascript') || t.includes('xml') ||
+                    ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
+
+                  if (isText) {
+                    return loadingText ? (
+                      <View style={styles.loadingBox}>
+                        <ActivityIndicator color="#3b82f6" />
+                        <Text style={styles.loadingText}>Reading file content...</Text>
+                      </View>
+                    ) : (
+                      <ScrollView style={styles.textPreviewScroll} contentContainerStyle={styles.textPreviewContainer}>
+                        <Text style={styles.textPreviewContent}>{textContent}</Text>
+                      </ScrollView>
+                    );
+                  }
+
+                  return (
+                    <View style={styles.noPreview}>
+                      <FileText size={48} color="#cbd5e1" />
+                      <Text style={styles.noPreviewText}>Preview not supported for this type</Text>
+                      <TouchableOpacity 
+                        style={styles.openBtn}
+                        onPress={() => shareFile(previewFile)}
+                      >
+                        <Text style={styles.openBtnText}>Open with other app</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })()
               )}
             </View>
 
@@ -1086,5 +1176,25 @@ const styles = StyleSheet.create({
   },
   cancelBtn: {
     padding: 4,
+  },
+  textPreviewScroll: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#0f172a',
+  },
+  textPreviewContainer: {
+    padding: 20,
+  },
+  textPreviewContent: {
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    fontSize: 12,
+    color: '#38bdf8',
+    lineHeight: 18,
+  },
+  loadingText: {
+    fontSize: 12,
+    color: '#94a3b8',
+    marginTop: 8,
+    fontWeight: '600',
   }
 });
