@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { 
   FileText, 
   Image as ImageIcon, 
@@ -66,6 +66,18 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
   const [textContent, setTextContent] = useState<string>('');
   const [loadingText, setLoadingText] = useState(false);
 
+  // New states for enhancements
+  const [showCreateNoteModal, setShowCreateNoteModal] = useState(false);
+  const [noteName, setNoteName] = useState('');
+  const [noteContent, setNoteContent] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+  const [isEditingText, setIsEditingText] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [tagInput, setTagInput] = useState('');
+  const [selectedTagsFilter, setSelectedTagsFilter] = useState<string[]>([]);
+  const [allFileTags, setAllFileTags] = useState<string[]>([]);
+
   const fetchFiles = useCallback(async () => {
     setLoading(true);
     try {
@@ -75,6 +87,15 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
       } else {
         queryFetch = await db.files.toArray();
       }
+
+      // Extract all unique tags
+      const tagsSet = new Set<string>();
+      queryFetch.forEach(f => {
+        if (f.tags) {
+          f.tags.forEach(t => tagsSet.add(t));
+        }
+      });
+      setAllFileTags(Array.from(tagsSet));
 
       // Local sorting
       const sorted = [...queryFetch].sort((a, b) => {
@@ -140,9 +161,12 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     }
   }, [previewFile]);
 
-  const filteredFiles = files.filter(f => 
-    f.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredFiles = files.filter(f => {
+    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTags = selectedTagsFilter.length === 0 || 
+      (f.tags && selectedTagsFilter.every(t => f.tags?.includes(t)));
+    return matchesSearch && matchesTags;
+  });
 
   const pickDocument = async () => {
     try {
@@ -229,6 +253,113 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     setShowRenameModal(false);
     setEditingFile(null);
     setNewFileName('');
+    fetchFiles();
+  };
+
+  const createTextNote = async () => {
+    if (!noteName.trim()) {
+      Alert.alert('Error', 'Please enter a note name');
+      return;
+    }
+    setSavingNote(true);
+    try {
+      let finalName = noteName.trim();
+      if (!finalName.endsWith('.txt') && !finalName.endsWith('.md')) {
+        finalName += '.txt';
+      }
+      const textData = noteContent;
+      const sizeBytes = textData.length;
+      let finalUri = '';
+
+      if (Platform.OS !== 'web') {
+        const permanentDirectory = FileSystem.documentDirectory + 'libre_files/';
+        const dirInfo = await FileSystem.getInfoAsync(permanentDirectory);
+        if (!dirInfo.exists) {
+          await FileSystem.makeDirectoryAsync(permanentDirectory, { intermediates: true });
+        }
+        finalUri = permanentDirectory + Date.now() + '_' + finalName;
+        await FileSystem.writeAsStringAsync(finalUri, textData);
+      } else {
+        const base64Data = btoa(unescape(encodeURIComponent(textData)));
+        finalUri = `data:text/plain;base64,${base64Data}`;
+      }
+
+      await db.files.add({
+        id: Date.now(),
+        name: finalName,
+        type: 'text/plain',
+        size: sizeBytes,
+        data: finalUri,
+        folderId: activeFolderId,
+        createdAt: Date.now(),
+        tags: [],
+      });
+
+      setShowCreateNoteModal(false);
+      setNoteName('');
+      setNoteContent('');
+      Alert.alert('Success', 'Note created successfully');
+      fetchFiles();
+    } catch (err) {
+      console.error(err);
+      Alert.alert('Error', 'Failed to create note');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
+  const saveTextChanges = async () => {
+    if (!previewFile?.id) return;
+    try {
+      const sizeBytes = editText.length;
+      let finalUri = previewFile.data;
+
+      if (Platform.OS !== 'web') {
+        await FileSystem.writeAsStringAsync(previewFile.data, editText);
+      } else {
+        const base64Data = btoa(unescape(encodeURIComponent(editText)));
+        finalUri = `data:text/plain;base64,${base64Data}`;
+      }
+
+      await db.files.update(previewFile.id, { 
+        data: finalUri, 
+        size: sizeBytes 
+      });
+
+      setPreviewFile({
+        ...previewFile,
+        data: finalUri,
+        size: sizeBytes
+      });
+      setTextContent(editText);
+      setIsEditingText(false);
+      Alert.alert('Success', 'File saved successfully');
+      fetchFiles();
+    } catch (err) {
+      console.error('Failed to save file changes', err);
+      Alert.alert('Error', 'Could not save changes');
+    }
+  };
+
+  const addTagToFile = async (tag: string) => {
+    const trimmed = tag.trim().toLowerCase();
+    if (!trimmed || !previewFile) return;
+    const currentTags = previewFile.tags || [];
+    if (currentTags.includes(trimmed)) return;
+    
+    const nextTags = [...currentTags, trimmed];
+    await db.files.update(previewFile.id!, { tags: nextTags });
+    setPreviewFile({ ...previewFile, tags: nextTags });
+    fetchFiles();
+  };
+
+  const removeTagFromFile = async (tag: string) => {
+    if (!previewFile) return;
+    const currentTags = previewFile.tags || [];
+    const nextTags = currentTags.filter(t => t !== tag);
+    
+    await db.files.update(previewFile.id!, { tags: nextTags });
+    setPreviewFile({ ...previewFile, tags: nextTags });
     fetchFiles();
   };
 
@@ -399,29 +530,47 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         </View>
       </View>
 
-      {/* Upload Box */}
-      <TouchableOpacity 
-        style={styles.uploadArea}
-        onPress={pickDocument}
-        disabled={uploading}
-      >
-        {uploading ? (
-          <View style={styles.progressContainer}>
-            <ActivityIndicator color="#3b82f6" />
-            <Text style={styles.progressText}>{uploadProgress}%</Text>
-            <View style={styles.progressBarBg}>
-              <View style={[styles.progressBarFill, { width: `${uploadProgress}%` }]} />
+      {/* Action Cards Row */}
+      <View style={styles.actionRow}>
+        <TouchableOpacity 
+          style={[styles.actionCard, { marginRight: 10 }]}
+          onPress={pickDocument}
+          disabled={uploading}
+        >
+          {uploading ? (
+            <View style={styles.progressContainer}>
+              <ActivityIndicator color="#3b82f6" size="small" />
+              <Text style={styles.progressText}>{uploadProgress}%</Text>
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: `${uploadProgress}%` }]} />
+              </View>
             </View>
+          ) : (
+            <>
+              <View style={styles.actionIconBox}>
+                <Upload size={18} color="#2563eb" />
+              </View>
+              <View style={styles.actionTextContainer}>
+                <Text style={styles.actionCardTitle}>Upload File</Text>
+                <Text style={styles.actionCardSub}>Import from device</Text>
+              </View>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.actionCard}
+          onPress={() => setShowCreateNoteModal(true)}
+        >
+          <View style={[styles.actionIconBox, { backgroundColor: '#eff6ff' }]}>
+            <Plus size={18} color="#2563eb" />
           </View>
-        ) : (
-          <>
-            <View style={styles.uploadIconBox}>
-              <Upload size={20} color="#3b82f6" />
-            </View>
-            <Text style={styles.uploadText}>Tap to add files</Text>
-          </>
-        )}
-      </TouchableOpacity>
+          <View style={styles.actionTextContainer}>
+            <Text style={styles.actionCardTitle}>New Note</Text>
+            <Text style={styles.actionCardSub}>Create text note</Text>
+          </View>
+        </TouchableOpacity>
+      </View>
 
       {/* Search & Sort Row */}
       <View style={styles.searchSortRow}>
@@ -452,6 +601,41 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
           </Text>
         </TouchableOpacity>
       </View>
+
+      {/* Tags Filter Row */}
+      {allFileTags.length > 0 && (
+        <View style={styles.tagFilterRow}>
+          <Text style={styles.tagFilterLabel}>Tags:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagFilterScroll}>
+            {allFileTags.map(tag => {
+              const isSelected = selectedTagsFilter.includes(tag);
+              return (
+                <TouchableOpacity
+                  key={tag}
+                  onPress={() => {
+                    if (isSelected) {
+                      setSelectedTagsFilter(selectedTagsFilter.filter(t => t !== tag));
+                    } else {
+                      setSelectedTagsFilter([...selectedTagsFilter, tag]);
+                    }
+                  }}
+                  style={[
+                    styles.tagFilterBadge,
+                    isSelected && styles.tagFilterBadgeActive
+                  ]}
+                >
+                  <Text style={[
+                    styles.tagFilterBadgeText,
+                    isSelected && styles.tagFilterBadgeTextActive
+                  ]}>
+                    #{tag}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* List */}
       {loading ? (
@@ -508,7 +692,37 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                   <Text style={styles.previewFileSize}>{formatSize(previewFile.size)}</Text>
                 </View>
               </View>
-              <TouchableOpacity onPress={() => setPreviewFile(null)}>
+              
+              {/* If it's text, show edit toggle */}
+              {(() => {
+                const ext = previewFile.name.split('.').pop()?.toLowerCase();
+                const t = previewFile.type.toLowerCase();
+                const isText = t.includes('text') || t.includes('json') || t.includes('javascript') || t.includes('xml') ||
+                  ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
+                
+                if (isText && !loadingText) {
+                  return (
+                    <TouchableOpacity 
+                      style={[styles.editToggleBtn, isEditingText && styles.editToggleBtnActive]} 
+                      onPress={() => {
+                        if (isEditingText) {
+                          setIsEditingText(false);
+                        } else {
+                          setEditText(textContent);
+                          setIsEditingText(true);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.editToggleBtnText, isEditingText && styles.editToggleBtnTextActive]}>
+                        {isEditingText ? 'Cancel' : 'Edit'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                }
+                return null;
+              })()}
+
+              <TouchableOpacity onPress={() => { setPreviewFile(null); setIsEditingText(false); }} style={{ marginLeft: 12 }}>
                 <X size={24} color="#0f172a" />
               </TouchableOpacity>
             </View>
@@ -528,12 +742,29 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                     ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
 
                   if (isText) {
-                    return loadingText ? (
-                      <View style={styles.loadingBox}>
-                        <ActivityIndicator color="#3b82f6" />
-                        <Text style={styles.loadingText}>Reading file content...</Text>
-                      </View>
-                    ) : (
+                    if (loadingText) {
+                      return (
+                        <View style={styles.loadingBox}>
+                          <ActivityIndicator color="#3b82f6" />
+                          <Text style={styles.loadingText}>Reading file content...</Text>
+                        </View>
+                      );
+                    }
+                    if (isEditingText) {
+                      return (
+                        <TextInput
+                          style={styles.textEditorInput}
+                          multiline
+                          value={editText}
+                          onChangeText={setEditText}
+                          textAlignVertical="top"
+                          placeholder="Write something..."
+                          placeholderTextColor="#cbd5e1"
+                          autoFocus
+                        />
+                      );
+                    }
+                    return (
                       <ScrollView style={styles.textPreviewScroll} contentContainerStyle={styles.textPreviewContainer}>
                         <Text style={styles.textPreviewContent}>{textContent}</Text>
                       </ScrollView>
@@ -556,14 +787,55 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
               )}
             </View>
 
+            {/* Metadata / Tags Section */}
+            <View style={styles.previewMetaSection}>
+              <View style={styles.tagsHeader}>
+                <Text style={styles.previewMetaLabel}>TAGS</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowTagModal(true)}
+                  style={styles.manageTagsBtn}
+                >
+                  <Text style={styles.manageTagsBtnText}>Manage</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.previewTagsList}>
+                {(previewFile.tags && previewFile.tags.length > 0) ? (
+                  previewFile.tags.map((tag) => (
+                    <View key={tag} style={styles.previewTagBadge}>
+                      <Text style={styles.previewTagBadgeText}>#{tag}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.noTagsText}>No tags added yet. Tap Manage to add tags.</Text>
+                )}
+              </View>
+            </View>
+
             <View style={styles.previewFooter}>
-              <TouchableOpacity 
-                style={styles.shareBtn}
-                onPress={() => shareFile(previewFile)}
-              >
-                <Download size={18} color="#fff" />
-                <Text style={styles.shareBtnText}>Share / Save</Text>
-              </TouchableOpacity>
+              {isEditingText ? (
+                <View style={styles.editorActionRow}>
+                  <TouchableOpacity 
+                    style={styles.saveEditBtn}
+                    onPress={saveTextChanges}
+                  >
+                    <Text style={styles.saveEditBtnText}>Save Changes</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.cancelEditBtn}
+                    onPress={() => setIsEditingText(false)}
+                  >
+                    <Text style={styles.cancelEditBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity 
+                  style={styles.shareBtn}
+                  onPress={() => shareFile(previewFile)}
+                >
+                  <Download size={18} color="#fff" />
+                  <Text style={styles.shareBtnText}>Share / Save</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -664,6 +936,111 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
               onPress={() => setShowMoveModal(false)}
             >
               <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Create Note Modal */}
+      <Modal visible={showCreateNoteModal} transparent animationType="slide">
+        <View style={styles.bottomSheetOverlay}>
+          <View style={[styles.bottomSheet, { maxHeight: '80%' }]}>
+            <View style={styles.handle} />
+            <Text style={styles.bottomSheetTitle}>Create New Note</Text>
+            
+            <TextInput
+              style={[styles.input, { textAlign: 'left', marginBottom: 12 }]}
+              placeholder="Filename (e.g. my_note.txt)"
+              placeholderTextColor="#94a3b8"
+              value={noteName}
+              onChangeText={setNoteName}
+            />
+
+            <TextInput
+              style={[styles.noteContentInput, { textAlignVertical: 'top' }]}
+              placeholder="Start typing your note here..."
+              placeholderTextColor="#cbd5e1"
+              multiline
+              numberOfLines={8}
+              value={noteContent}
+              onChangeText={setNoteContent}
+            />
+
+            <TouchableOpacity 
+              style={[styles.confirmBtn, { marginTop: 12 }]} 
+              onPress={createTextNote}
+              disabled={savingNote}
+            >
+              {savingNote ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.confirmBtnText}>Create Note</Text>
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.sheetCancelBtn}
+              onPress={() => {
+                setShowCreateNoteModal(false);
+                setNoteName('');
+                setNoteContent('');
+              }}
+            >
+              <Text style={styles.sheetCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Tag Manager Modal */}
+      <Modal visible={showTagModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Manage Tags</Text>
+            
+            {/* Current tags of file */}
+            <View style={styles.modalTagsList}>
+              {previewFile && previewFile.tags && previewFile.tags.map(t => (
+                <View key={t} style={styles.modalTagBadge}>
+                  <Text style={styles.modalTagBadgeText}>#{t}</Text>
+                  <TouchableOpacity onPress={() => removeTagFromFile(t)} style={styles.removeTagBtn}>
+                    <Text style={styles.removeTagBtnText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+              {(!previewFile || !previewFile.tags || previewFile.tags.length === 0) && (
+                <Text style={styles.noTagsTextModal}>No tags added yet.</Text>
+              )}
+            </View>
+
+            {/* Input to add tag */}
+            <View style={styles.tagInputRow}>
+              <TextInput
+                style={styles.tagTextInput}
+                placeholder="Add tag (e.g. work)"
+                placeholderTextColor="#cbd5e1"
+                value={tagInput}
+                onChangeText={setTagInput}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity 
+                style={styles.addTagSubmitBtn}
+                onPress={() => {
+                  if (tagInput.trim()) {
+                    addTagToFile(tagInput.trim());
+                    setTagInput('');
+                  }
+                }}
+              >
+                <Text style={styles.addTagSubmitText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity 
+              style={[styles.confirmBtn, { backgroundColor: '#0f172a', marginTop: 12 }]} 
+              onPress={() => setShowTagModal(false)}
+            >
+              <Text style={styles.confirmBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1196,5 +1573,281 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     marginTop: 8,
     fontWeight: '600',
-  }
+  },
+  actionRow: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  actionCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 16,
+    padding: 12,
+    height: 70,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  actionIconBox: {
+    width: 36,
+    height: 36,
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  actionTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  actionCardTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  actionCardSub: {
+    fontSize: 9,
+    color: '#94a3b8',
+    marginTop: 1,
+  },
+  editToggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#eff6ff',
+  },
+  editToggleBtnActive: {
+    backgroundColor: '#ef4444',
+  },
+  editToggleBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2563eb',
+  },
+  editToggleBtnTextActive: {
+    color: '#fff',
+  },
+  textEditorInput: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    padding: 16,
+    fontSize: 13,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  previewMetaSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+    backgroundColor: '#fff',
+  },
+  tagsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  previewMetaLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748b',
+    letterSpacing: 1,
+  },
+  manageTagsBtn: {
+    padding: 4,
+  },
+  manageTagsBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#2563eb',
+    textTransform: 'uppercase',
+  },
+  previewTagsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  previewTagBadge: {
+    backgroundColor: '#f1f5f9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  previewTagBadgeText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  noTagsText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+  },
+  editorActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  saveEditBtn: {
+    flex: 2,
+    backgroundColor: '#2563eb',
+    height: 54,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveEditBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  cancelEditBtn: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    height: 54,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelEditBtnText: {
+    color: '#64748b',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  tagFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    marginBottom: 16,
+  },
+  tagFilterLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748b',
+    textTransform: 'uppercase',
+    marginRight: 10,
+  },
+  tagFilterScroll: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  tagFilterBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  tagFilterBadgeActive: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  tagFilterBadgeText: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  tagFilterBadgeTextActive: {
+    color: '#2563eb',
+    fontWeight: '700',
+  },
+  noteContentInput: {
+    width: '100%',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 14,
+    borderRadius: 12,
+    fontSize: 13,
+    color: '#1e293b',
+    minHeight: 150,
+  },
+  modalTagsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    width: '100%',
+    marginBottom: 16,
+    justifyContent: 'center',
+  },
+  modalTagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
+    paddingLeft: 8,
+    paddingRight: 4,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modalTagBadgeText: {
+    fontSize: 11,
+    color: '#2563eb',
+    fontWeight: '600',
+  },
+  removeTagBtn: {
+    marginLeft: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#dbeafe',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeTagBtnText: {
+    fontSize: 10,
+    color: '#2563eb',
+    fontWeight: '700',
+    lineHeight: 12,
+  },
+  noTagsTextModal: {
+    fontSize: 12,
+    color: '#94a3b8',
+    fontStyle: 'italic',
+  },
+  tagInputRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 8,
+    marginBottom: 12,
+  },
+  tagTextInput: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingHorizontal: 12,
+    height: 44,
+    borderRadius: 10,
+    fontSize: 13,
+    color: '#1e293b',
+  },
+  addTagSubmitBtn: {
+    width: 44,
+    height: 44,
+    backgroundColor: '#2563eb',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addTagSubmitText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '600',
+  },
 });

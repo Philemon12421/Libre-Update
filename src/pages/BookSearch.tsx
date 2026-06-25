@@ -23,9 +23,10 @@ import {
   Heart, 
   Bookmark,
   Layers,
-  FileText
+  FileText,
+  Plus
 } from 'lucide-react-native';
-import { db } from '../lib/db';
+import { db, LibreBook } from '../lib/db';
 
 interface BookResult {
   id: string;
@@ -43,6 +44,7 @@ interface BookResult {
   pageCount?: number;
   language?: string;
   isSaved?: boolean;
+  tags?: string[];
 }
 
 const PLACEHOLDER_COVER = 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=200&h=280';
@@ -55,6 +57,14 @@ export default function BookSearchPage() {
   const [hasSearched, setHasSearched] = useState(false);
   const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set());
 
+  // New states for Offline Library & Tagging
+  const [activeTab, setActiveTab] = useState<'discover' | 'library'>('discover');
+  const [savedBooks, setSavedBooks] = useState<LibreBook[]>([]);
+  const [selectedLibraryTags, setSelectedLibraryTags] = useState<string[]>([]);
+  const [allBookTags, setAllBookTags] = useState<string[]>([]);
+  const [showBookTagModal, setShowBookTagModal] = useState(false);
+  const [bookTagInput, setBookTagInput] = useState('');
+
   useEffect(() => {
     loadSavedBooks();
   }, []);
@@ -62,6 +72,16 @@ export default function BookSearchPage() {
   const loadSavedBooks = async () => {
     const saved = await db.books.toArray();
     setSavedBookIds(new Set(saved.map(b => b.googleId)));
+    setSavedBooks(saved);
+
+    // Extract unique tags
+    const tagsSet = new Set<string>();
+    saved.forEach(b => {
+      if (b.tags) {
+        b.tags.forEach(t => tagsSet.add(t));
+      }
+    });
+    setAllBookTags(Array.from(tagsSet));
   };
 
   const getHighResThumbnail = (url: string) => {
@@ -197,6 +217,59 @@ export default function BookSearchPage() {
     }
   };
 
+  const openBookDetails = async (book: BookResult) => {
+    const saved = await db.books.toArray();
+    const dbBook = saved.find(b => b.googleId === (book.googleId || book.id));
+    if (dbBook) {
+      setSelectedBook({
+        ...book,
+        tags: dbBook.tags || []
+      });
+    } else {
+      setSelectedBook({
+        ...book,
+        tags: []
+      });
+    }
+  };
+
+  const addTagToBook = async (tag: string) => {
+    const trimmed = tag.trim().toLowerCase();
+    if (!trimmed || !selectedBook) return;
+    
+    const saved = await db.books.toArray();
+    const dbBook = saved.find(b => b.googleId === (selectedBook.googleId || selectedBook.id));
+    if (!dbBook?.id) {
+      Alert.alert('Info', 'Please save this book to your library first.');
+      return;
+    }
+    
+    const currentTags = dbBook.tags || [];
+    if (currentTags.includes(trimmed)) return;
+    
+    const nextTags = [...currentTags, trimmed];
+    await db.books.update(dbBook.id, { tags: nextTags });
+    
+    setSelectedBook({ ...selectedBook, tags: nextTags });
+    loadSavedBooks();
+  };
+
+  const removeTagFromBook = async (tag: string) => {
+    if (!selectedBook) return;
+    
+    const saved = await db.books.toArray();
+    const dbBook = saved.find(b => b.googleId === (selectedBook.googleId || selectedBook.id));
+    if (!dbBook?.id) return;
+    
+    const currentTags = dbBook.tags || [];
+    const nextTags = currentTags.filter(t => t !== tag);
+    
+    await db.books.update(dbBook.id, { tags: nextTags });
+    
+    setSelectedBook({ ...selectedBook, tags: nextTags });
+    loadSavedBooks();
+  };
+
   const saveBook = async (book: BookResult) => {
     try {
       if (savedBookIds.has(book.googleId || book.id)) {
@@ -226,11 +299,13 @@ export default function BookSearchPage() {
         averageRating: book.rating,
         language: book.language,
         createdAt: Date.now(),
+        tags: [],
       });
 
       const next = new Set(savedBookIds);
       next.add(book.googleId || book.id);
       setSavedBookIds(next);
+      loadSavedBooks();
       Alert.alert('Saved', 'Book added to your library');
     } catch (err) {
       console.error('Failed to save book', err);

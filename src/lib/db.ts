@@ -8,6 +8,7 @@ export interface LibreFile {
   data: string; // Store as base64 or URI in RN
   folderId?: number;
   createdAt: number;
+  tags?: string[];
 }
 
 export interface LibreBook {
@@ -23,6 +24,7 @@ export interface LibreBook {
   averageRating?: number;
   language?: string;
   createdAt: number;
+  tags?: string[];
 }
 
 export interface LibreFolder {
