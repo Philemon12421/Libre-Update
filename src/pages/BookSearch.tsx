@@ -1,988 +1,510 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  FlatList, 
-  Image, 
-  StyleSheet, 
-  ActivityIndicator,
-  Modal,
-  ScrollView,
-  Linking,
-  Alert
+import React, { useState, useCallback, useRef } from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet, FlatList,
+  TextInput, ActivityIndicator, Image, ScrollView,
+  Modal, Linking, Alert, Platform,
 } from 'react-native';
-import { 
-  Search, 
-  BookOpen, 
-  ExternalLink, 
-  Star, 
-  Globe, 
-  X, 
-  Heart, 
-  Bookmark,
-  Layers,
-  FileText,
-  Plus
+import {
+  Search, X, BookOpen, ExternalLink, Download,
+  Star, ChevronRight, RefreshCw, Filter,
 } from 'lucide-react-native';
-import { db, LibreBook } from '../lib/db';
 
-interface BookResult {
-  id: string;
-  googleId?: string;
+interface Book {
+  key: string;
   title: string;
-  authors: string[];
-  thumbnail: string;
-  description: string;
-  previewLink: string;
-  infoLink: string;
-  source: string;
-  publishedDate?: string;
-  rating?: number;
-  categories?: string[];
-  pageCount?: number;
-  language?: string;
-  isSaved?: boolean;
-  tags?: string[];
+  author_name?: string[];
+  first_publish_year?: number;
+  cover_i?: number;
+  subject?: string[];
+  language?: string[];
+  edition_count?: number;
+  ia?: string[];
+  has_fulltext?: boolean;
+  public_scan_b?: boolean;
 }
 
-const PLACEHOLDER_COVER = 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=200&h=280';
+interface BookDetail {
+  title: string;
+  description?: string | { value: string };
+  subjects?: string[];
+  covers?: number[];
+}
 
-export default function BookSearchPage() {
+const SUBJECTS = [
+  { id: 'science', label: 'Science', color: '#10b981' },
+  { id: 'history', label: 'History', color: '#f59e0b' },
+  { id: 'philosophy', label: 'Philosophy', color: '#8b5cf6' },
+  { id: 'technology', label: 'Technology', color: '#3b82f6' },
+  { id: 'fiction', label: 'Fiction', color: '#ec4899' },
+  { id: 'mathematics', label: 'Math', color: '#ef4444' },
+  { id: 'medicine', label: 'Medicine', color: '#06b6d4' },
+  { id: 'law', label: 'Law', color: '#64748b' },
+];
+
+const COVER_URL = (id: number, size: 'S' | 'M' | 'L' = 'M') =>
+  `https://covers.openlibrary.org/b/id/${id}-${size}.jpg`;
+
+const OPEN_LIB_SEARCH = (q: string, page = 1) =>
+  `https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&page=${page}&limit=20&fields=key,title,author_name,first_publish_year,cover_i,subject,language,edition_count,ia,has_fulltext,public_scan_b`;
+
+const SUBJECT_SEARCH = (subject: string, page = 1) =>
+  `https://openlibrary.org/subjects/${subject}.json?limit=20&offset=${(page - 1) * 20}`;
+
+export default function BookSearch() {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<BookResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [selectedBook, setSelectedBook] = useState<BookResult | null>(null);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [savedBookIds, setSavedBookIds] = useState<Set<string>>(new Set());
+  const [books, setBooks] = useState<Book[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalFound, setTotalFound] = useState(0);
+  const [error, setError] = useState('');
+  const [activeSubject, setActiveSubject] = useState<string | null>(null);
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [bookDetail, setBookDetail] = useState<BookDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const inputRef = useRef<TextInput>(null);
 
-  // New states for Offline Library & Tagging
-  const [activeTab, setActiveTab] = useState<'discover' | 'library'>('discover');
-  const [savedBooks, setSavedBooks] = useState<LibreBook[]>([]);
-  const [selectedLibraryTags, setSelectedLibraryTags] = useState<string[]>([]);
-  const [allBookTags, setAllBookTags] = useState<string[]>([]);
-  const [showBookTagModal, setShowBookTagModal] = useState(false);
-  const [bookTagInput, setBookTagInput] = useState('');
+  const search = useCallback(async (q: string, pg = 1, append = false) => {
+    if (!q.trim() && !activeSubject) return;
+    pg === 1 ? setLoading(true) : setLoadingMore(true);
+    setError('');
+    try {
+      const url = activeSubject && !q.trim()
+        ? SUBJECT_SEARCH(activeSubject, pg)
+        : OPEN_LIB_SEARCH(q, pg);
 
-  useEffect(() => {
-    loadSavedBooks();
-  }, []);
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-  const loadSavedBooks = async () => {
-    const saved = await db.books.toArray();
-    setSavedBookIds(new Set(saved.map(b => b.googleId)));
-    setSavedBooks(saved);
+      let results: Book[] = [];
+      let total = 0;
 
-    // Extract unique tags
-    const tagsSet = new Set<string>();
-    saved.forEach(b => {
-      if (b.tags) {
-        b.tags.forEach(t => tagsSet.add(t));
+      if (activeSubject && !q.trim()) {
+        // Subject API returns { works: [...] }
+        results = (data.works ?? []).map((w: any) => ({
+          key: w.key,
+          title: w.title,
+          author_name: w.authors?.map((a: any) => a.name),
+          first_publish_year: w.first_publish_year,
+          cover_i: w.cover_id,
+          edition_count: w.edition_count,
+        }));
+        total = data.work_count ?? results.length;
+      } else {
+        results = data.docs ?? [];
+        total = data.numFound ?? 0;
       }
-    });
-    setAllBookTags(Array.from(tagsSet));
-  };
 
-  const getHighResThumbnail = (url: string) => {
-    if (!url) return PLACEHOLDER_COVER;
-    // Replace zoom=5 or other small values with zoom=1 or 2 for Google Books
-    // Also ensure https
-    return url.replace('http:', 'https:').replace('zoom=5', 'zoom=1').replace('&edge=curl', '');
-  };
-
-  const fetchGoogleBooks = async (q: string): Promise<BookResult[]> => {
-    try {
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=10`);
-      if (!res.ok) throw new Error('Failed to fetch Google Books');
-      const data = await res.json();
-      return (data.items || []).map((item: any) => {
-        const thumb = item.volumeInfo.imageLinks?.extraLarge || 
-                      item.volumeInfo.imageLinks?.large || 
-                      item.volumeInfo.imageLinks?.medium || 
-                      item.volumeInfo.imageLinks?.small || 
-                      item.volumeInfo.imageLinks?.thumbnail;
-        return {
-          id: `google-${item.id}`,
-          googleId: item.id,
-          title: item.volumeInfo.title || 'Unknown Title',
-          authors: item.volumeInfo.authors || ['Unknown Author'],
-          thumbnail: getHighResThumbnail(thumb || PLACEHOLDER_COVER),
-          description: item.volumeInfo.description || 'No description available.',
-          previewLink: item.volumeInfo.previewLink || '#',
-          infoLink: item.volumeInfo.infoLink || '#',
-          source: 'Google',
-          publishedDate: item.volumeInfo.publishedDate,
-          rating: item.volumeInfo.averageRating,
-          categories: item.volumeInfo.categories,
-          pageCount: item.volumeInfo.pageCount,
-          language: item.volumeInfo.language,
-          isSaved: savedBookIds.has(item.id)
-        };
-      });
-    } catch (e) {
-      console.warn('Google Books failed:', e);
-      return [];
-    }
-  };
-
-  const fetchOpenLibrary = async (q: string): Promise<BookResult[]> => {
-    try {
-      const res = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(q)}&limit=10`);
-      if (!res.ok) throw new Error('Failed to fetch Open Library');
-      const data = await res.json();
-      return (data.docs || []).slice(0, 10).map((item: any) => ({
-        id: `ol-${item.key}`,
-        title: item.title || 'Unknown Title',
-        authors: item.author_name || ['Unknown Author'],
-        thumbnail: item.cover_i
-          ? `https://covers.openlibrary.org/b/id/${item.cover_i}-M.jpg`
-          : PLACEHOLDER_COVER,
-        description: item.first_sentence?.[0] || 'Available on Open Library.',
-        previewLink: `https://openlibrary.org${item.key}`,
-        infoLink: `https://openlibrary.org${item.key}`,
-        source: 'OpenLib',
-        publishedDate: item.first_publish_year?.toString(),
-      }));
-    } catch (e) {
-      console.warn('Open Library failed:', e);
-      return [];
-    }
-  };
-
-  const fetchGutenberg = async (q: string): Promise<BookResult[]> => {
-    try {
-      const res = await fetch(`https://gutendex.com/books/?search=${encodeURIComponent(q)}`);
-      if (!res.ok) throw new Error('Failed to fetch Gutenberg');
-      const data = await res.json();
-      return (data.results || []).slice(0, 10).map((item: any) => ({
-        id: `guten-${item.id}`,
-        title: item.title || 'Unknown Title',
-        authors: item.authors?.map((a: any) => a.name) || ['Public Domain'],
-        thumbnail: item.formats?.['image/jpeg'] || PLACEHOLDER_COVER,
-        description: `Download count: ${item.download_count || 0}. Languages: ${(item.languages || []).join(', ')}.`,
-        previewLink: item.formats?.['text/html'] || item.formats?.['text/plain'] || '#',
-        infoLink: `https://www.gutenberg.org/ebooks/${item.id}`,
-        source: 'Gutenberg',
-        publishedDate: 'Public Domain',
-      }));
-    } catch (e) {
-      console.warn('Gutenberg failed:', e);
-      return [];
-    }
-  };
-
-  const fetchArchiveOrg = async (q: string): Promise<BookResult[]> => {
-    try {
-      const res = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}+AND+mediatype:texts&output=json&rows=10`);
-      if (!res.ok) throw new Error('Failed to fetch Archive.org');
-      const data = await res.json();
-      return (data.response?.docs || []).map((item: any) => ({
-        id: `ia-${item.identifier}`,
-        title: item.title || 'Unknown Title',
-        authors: [item.creator || 'Unknown Creator'],
-        thumbnail: `https://archive.org/services/img/${item.identifier}`,
-        description: item.description || 'Digitized by Internet Archive.',
-        previewLink: `https://archive.org/details/${item.identifier}`,
-        infoLink: `https://archive.org/details/${item.identifier}`,
-        source: 'Archive.org',
-        publishedDate: item.date,
-      }));
-    } catch (e) {
-      console.warn('Archive.org failed:', e);
-      return [];
-    }
-  };
-
-  const searchBooks = async (customQuery?: string) => {
-    const activeQuery = customQuery || query;
-    if (!activeQuery.trim()) return;
-    setSearching(true);
-    setResults([]);
-    setHasSearched(true);
-
-    try {
-      const [googleBooks, olBooks, gutenBooks, iaBooks] = await Promise.all([
-        fetchGoogleBooks(activeQuery),
-        fetchOpenLibrary(activeQuery),
-        fetchGutenberg(activeQuery),
-        fetchArchiveOrg(activeQuery),
-      ]);
-
-      setResults([...googleBooks, ...olBooks, ...gutenBooks, ...iaBooks]);
-    } catch (err) {
-      console.error('Search failed', err);
+      setTotalFound(total);
+      setBooks(prev => append ? [...prev, ...results] : results);
+      setPage(pg);
+      setHasMore(results.length === 20 && (append ? books.length + results.length : results.length) < total);
+    } catch (e: any) {
+      setError('Could not load books. Check your internet connection.');
+      console.error(e);
     } finally {
-      setSearching(false);
+      setLoading(false);
+      setLoadingMore(false);
     }
+  }, [activeSubject, books.length]);
+
+  const handleSearch = () => {
+    setBooks([]); setPage(1);
+    search(query, 1, false);
   };
 
-  const openBookDetails = async (book: BookResult) => {
-    const saved = await db.books.toArray();
-    const dbBook = saved.find(b => b.googleId === (book.googleId || book.id));
-    if (dbBook) {
-      setSelectedBook({
-        ...book,
-        tags: dbBook.tags || []
-      });
-    } else {
-      setSelectedBook({
-        ...book,
-        tags: []
-      });
-    }
+  const handleSubject = (id: string) => {
+    const next = activeSubject === id ? null : id;
+    setActiveSubject(next);
+    setQuery('');
+    setBooks([]); setPage(1);
+    if (next) search('', 1, false);
+    else { setBooks([]); setTotalFound(0); }
   };
 
-  const addTagToBook = async (tag: string) => {
-    const trimmed = tag.trim().toLowerCase();
-    if (!trimmed || !selectedBook) return;
-    
-    const saved = await db.books.toArray();
-    const dbBook = saved.find(b => b.googleId === (selectedBook.googleId || selectedBook.id));
-    if (!dbBook?.id) {
-      Alert.alert('Info', 'Please save this book to your library first.');
-      return;
-    }
-    
-    const currentTags = dbBook.tags || [];
-    if (currentTags.includes(trimmed)) return;
-    
-    const nextTags = [...currentTags, trimmed];
-    await db.books.update(dbBook.id, { tags: nextTags });
-    
-    setSelectedBook({ ...selectedBook, tags: nextTags });
-    loadSavedBooks();
+  const loadMore = () => {
+    if (!loadingMore && hasMore) search(query, page + 1, true);
   };
 
-  const removeTagFromBook = async (tag: string) => {
-    if (!selectedBook) return;
-    
-    const saved = await db.books.toArray();
-    const dbBook = saved.find(b => b.googleId === (selectedBook.googleId || selectedBook.id));
-    if (!dbBook?.id) return;
-    
-    const currentTags = dbBook.tags || [];
-    const nextTags = currentTags.filter(t => t !== tag);
-    
-    await db.books.update(dbBook.id, { tags: nextTags });
-    
-    setSelectedBook({ ...selectedBook, tags: nextTags });
-    loadSavedBooks();
-  };
-
-  const saveBook = async (book: BookResult) => {
+  const openDetail = async (book: Book) => {
+    setSelectedBook(book);
+    setLoadingDetail(true);
+    setBookDetail(null);
     try {
-      if (savedBookIds.has(book.googleId || book.id)) {
-        // Unsave
-        const allSaved = await db.books.toArray();
-        const bookToDelete = allSaved.find(b => b.googleId === (book.googleId || book.id));
-        if (bookToDelete?.id) {
-          await db.books.delete(bookToDelete.id);
-          const next = new Set(savedBookIds);
-          next.delete(book.googleId || book.id);
-          setSavedBookIds(next);
-          loadSavedBooks();
-        }
-        return;
-      }
+      const res = await fetch(`https://openlibrary.org${book.key}.json`);
+      if (res.ok) setBookDetail(await res.json());
+    } catch {}
+    finally { setLoadingDetail(false); }
+  };
 
-      await db.books.add({
-        id: Date.now(),
-        googleId: book.googleId || book.id,
-        title: book.title,
-        authors: book.authors,
-        description: book.description,
-        thumbnail: book.thumbnail,
-        publishedDate: book.publishedDate,
-        categories: book.categories,
-        pageCount: book.pageCount,
-        averageRating: book.rating,
-        language: book.language,
-        createdAt: Date.now(),
-        tags: [],
-      });
-
-      const next = new Set(savedBookIds);
-      next.add(book.googleId || book.id);
-      setSavedBookIds(next);
-      loadSavedBooks();
-      Alert.alert('Saved', 'Book added to your library');
-    } catch (err) {
-      console.error('Failed to save book', err);
-      Alert.alert('Error', 'Could not save book');
+  const openArchive = (book: Book) => {
+    if (book.ia && book.ia.length > 0) {
+      Linking.openURL(`https://archive.org/details/${book.ia[0]}`);
+    } else {
+      Linking.openURL(`https://openlibrary.org${book.key}`);
     }
   };
 
-  const renderBookItem = ({ item }: { item: BookResult }) => {
-    const isSaved = savedBookIds.has(item.googleId || item.id);
-    return (
-      <TouchableOpacity 
-        style={styles.bookCard} 
-        onPress={() => setSelectedBook(item)}
-      >
-        <View style={styles.coverContainer}>
-          <Image 
-            source={{ uri: item.thumbnail }} 
+  const getDescription = (detail: BookDetail) => {
+    if (!detail.description) return null;
+    if (typeof detail.description === 'string') return detail.description;
+    return detail.description.value ?? null;
+  };
+
+  const renderBook = ({ item }: { item: Book }) => (
+    <TouchableOpacity style={styles.bookCard} onPress={() => openDetail(item)} activeOpacity={0.7}>
+      <View style={styles.coverWrap}>
+        {item.cover_i ? (
+          <Image
+            source={{ uri: COVER_URL(item.cover_i, 'S') }}
             style={styles.cover}
             resizeMode="cover"
           />
-          <View style={styles.sourceTag}>
-            <Text style={styles.sourceTagText}>{item.source}</Text>
+        ) : (
+          <View style={styles.coverPlaceholder}>
+            <BookOpen size={22} color="#3b82f6" />
           </View>
-          {isSaved && (
-            <View style={styles.savedBadge}>
-              <Heart size={10} color="#fff" fill="#fff" />
+        )}
+        {(item.has_fulltext || item.public_scan_b) && (
+          <View style={styles.freeBadge}><Text style={styles.freeBadgeText}>FREE</Text></View>
+        )}
+      </View>
+      <View style={styles.bookInfo}>
+        <Text style={styles.bookTitle} numberOfLines={2}>{item.title}</Text>
+        {item.author_name && (
+          <Text style={styles.bookAuthor} numberOfLines={1}>{item.author_name.slice(0, 2).join(', ')}</Text>
+        )}
+        <View style={styles.bookMeta}>
+          {item.first_publish_year && (
+            <View style={styles.metaChip}>
+              <Text style={styles.metaChipText}>{item.first_publish_year}</Text>
+            </View>
+          )}
+          {item.edition_count && item.edition_count > 1 && (
+            <View style={[styles.metaChip, { backgroundColor: '#eff6ff', borderColor: '#dbeafe' }]}>
+              <Text style={[styles.metaChipText, { color: '#2563eb' }]}>{item.edition_count} eds</Text>
+            </View>
+          )}
+          {item.language && item.language.includes('eng') && (
+            <View style={[styles.metaChip, { backgroundColor: '#ecfdf5', borderColor: '#d1fae5' }]}>
+              <Text style={[styles.metaChipText, { color: '#10b981' }]}>EN</Text>
             </View>
           )}
         </View>
-        <View style={styles.bookInfo}>
-          <Text style={styles.bookTitle} numberOfLines={2}>{item.title}</Text>
-          <View style={styles.bookMeta}>
-            <Text style={styles.bookAuthor} numberOfLines={1}>{item.authors[0]}</Text>
-            {item.rating && (
-              <View style={styles.ratingRow}>
-                <Star size={10} color="#fbbf24" fill="#fbbf24" />
-                <Text style={styles.ratingText}>{item.rating}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+      </View>
+      <ChevronRight size={16} color="#cbd5e1" />
+    </TouchableOpacity>
+  );
 
   return (
     <View style={styles.container}>
-      {/* Search Section */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchBar}>
-          <Search size={18} color="#94a3b8" />
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Discover</Text>
+        <Text style={styles.subtitle}>Open Library · {totalFound > 0 ? `${totalFound.toLocaleString()} results` : 'Millions of free books'}</Text>
+      </View>
+
+      {/* Search bar */}
+      <View style={styles.searchWrap}>
+        <View style={styles.searchBox}>
+          <Search size={16} color="#94a3b8" />
           <TextInput
+            ref={inputRef}
             style={styles.searchInput}
+            placeholder="Search books, authors, topics..."
+            placeholderTextColor="#cbd5e1"
             value={query}
             onChangeText={setQuery}
-            placeholder="Search books, authors, titles..."
-            onSubmitEditing={() => searchBooks()}
-            placeholderTextColor="#cbd5e1"
+            onSubmitEditing={handleSearch}
+            returnKeyType="search"
           />
-          {searching ? (
-            <ActivityIndicator size="small" color="#3b82f6" />
-          ) : (
-            <TouchableOpacity 
-              onPress={() => searchBooks()}
-              disabled={!query.trim()}
-              style={[styles.searchBtn, !query.trim() && { opacity: 0.5 }]}
-            >
-              <Text style={styles.searchBtnText}>SEARCH</Text>
+          {query !== '' && (
+            <TouchableOpacity onPress={() => { setQuery(''); setBooks([]); setTotalFound(0); }}>
+              <X size={14} color="#94a3b8" />
             </TouchableOpacity>
           )}
         </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false}
-          style={styles.categories}
-          contentContainerStyle={styles.categoriesContent}
-        >
-          {['Fiction', 'Science', 'History', 'Classic', 'Fantasy', 'Tech', 'Art', 'Mystery', 'Medicine', 'Cooking', 'Philosophy'].map(cat => (
-            <TouchableOpacity
-              key={cat}
-              onPress={() => { setQuery(cat); searchBooks(cat); }}
-              style={[styles.categoryBtn, query === cat && styles.categoryBtnActive]}
-            >
-              <Text style={[styles.categoryText, query === cat && styles.categoryTextActive]}>{cat}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
+          <Search size={18} color="#fff" />
+        </TouchableOpacity>
       </View>
 
-      {/* Results List */}
-      {searching ? (
-        <View style={styles.statusBox}>
-          <ActivityIndicator size="large" color="#3b82f6" />
-          <Text style={styles.statusText}>SEARCHING...</Text>
-        </View>
-      ) : results.length > 0 ? (
-        <FlatList
-          data={results}
-          renderItem={renderBookItem}
-          keyExtractor={item => item.id}
-          numColumns={2}
-          contentContainerStyle={styles.listContent}
-          columnWrapperStyle={styles.columnWrapper}
-        />
-      ) : (
-        <View style={styles.emptyState}>
-          <View style={styles.emptyIconBox}>
-            {hasSearched ? <Search size={32} color="#cbd5e1" /> : <BookOpen size={32} color="#cbd5e1" />}
-          </View>
-          <Text style={styles.emptyTitle}>{hasSearched ? 'No results found' : 'Find Any Book'}</Text>
-          <Text style={styles.emptySubtitle}>
-            {hasSearched 
-              ? 'Try different keywords or check your spelling.' 
-              : 'Search across Google Books, Open Library, and Gutenberg simultaneously.'}
-          </Text>
+      {/* Subject chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subjectsScroll} contentContainerStyle={styles.subjectsContent}>
+        {SUBJECTS.map(s => {
+          const isActive = activeSubject === s.id;
+          return (
+            <TouchableOpacity
+              key={s.id}
+              style={[styles.subjectChip, isActive && { backgroundColor: s.color, borderColor: s.color }]}
+              onPress={() => handleSubject(s.id)}
+            >
+              <Text style={[styles.subjectText, isActive && { color: '#fff' }]}>{s.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Error */}
+      {error !== '' && (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => search(query, 1, false)}>
+            <RefreshCw size={14} color="#ef4444" />
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Book Detail Modal */}
-      <Modal
-        visible={!!selectedBook}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setSelectedBook(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={styles.modalCloseArea}
-            onPress={() => setSelectedBook(null)}
-          />
-          <View style={styles.modalContent}>
-            {selectedBook && (
-              <>
-                <TouchableOpacity 
-                  style={styles.modalCloseBtn}
-                  onPress={() => setSelectedBook(null)}
-                >
-                  <X size={20} color="#94a3b8" />
-                </TouchableOpacity>
+      {/* Loading */}
+      {loading && (
+        <View style={styles.loadingBox}>
+          <ActivityIndicator color="#2563eb" size="large" />
+          <Text style={styles.loadingText}>Searching Open Library...</Text>
+        </View>
+      )}
 
-                <ScrollView>
-                  <View style={styles.modalHero}>
-                    <Image 
-                      source={{ uri: selectedBook.thumbnail }} 
-                      style={styles.modalHeroCover}
-                    />
-                  </View>
-
-                  <View style={styles.modalDetails}>
-                    <Text style={styles.modalTitle}>{selectedBook.title}</Text>
-                    <Text style={styles.modalAuthor}>{selectedBook.authors.join(', ')}</Text>
-                    
-                    {selectedBook.categories && (
-                      <View style={styles.categoriesRow}>
-                        {selectedBook.categories.slice(0, 3).map((cat, i) => (
-                          <View key={i} style={styles.categoryBadge}>
-                            <Text style={styles.categoryBadgeText}>{cat}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-
-                    <View style={styles.ratingSection}>
-                      {selectedBook.rating ? (
-                        <View style={styles.ratingBadge}>
-                          <Star size={14} color="#fbbf24" fill="#fbbf24" />
-                          <Text style={styles.ratingValue}>{selectedBook.rating}</Text>
-                          <Text style={styles.ratingMax}>/ 5</Text>
-                        </View>
-                      ) : (
-                        <View style={styles.ratingBadge}>
-                          <Star size={14} color="#e2e8f0" />
-                          <Text style={styles.ratingValue}>N/A</Text>
-                        </View>
-                      )}
-                      
-                      {selectedBook.pageCount && (
-                        <View style={styles.metaBadge}>
-                          <Layers size={14} color="#64748b" />
-                          <Text style={styles.metaBadgeText}>{selectedBook.pageCount} Pages</Text>
-                        </View>
-                      )}
-
-                      {selectedBook.language && (
-                        <View style={styles.metaBadge}>
-                          <Globe size={14} color="#64748b" />
-                          <Text style={styles.metaBadgeText}>{selectedBook.language.toUpperCase()}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <View style={styles.descriptionBox}>
-                      <Text style={styles.descriptionText}>
-                        {selectedBook.description.replace(/<[^>]*>/g, '').substring(0, 500)}
-                        {selectedBook.description.length > 500 ? '...' : ''}
-                      </Text>
-                    </View>
-
-                    <View style={styles.metaRow}>
-                      <View style={styles.metaItem}>
-                        <Text style={styles.metaLabel}>SOURCE</Text>
-                        <Text style={styles.metaValue}>{selectedBook.source}</Text>
-                      </View>
-                      {selectedBook.publishedDate && (
-                        <View style={styles.metaItem}>
-                          <Text style={styles.metaLabel}>PUBLISHED</Text>
-                          <Text style={styles.metaValue}>{selectedBook.publishedDate}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                </ScrollView>
-
-                <View style={styles.modalFooter}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.saveBtn, 
-                      savedBookIds.has(selectedBook.googleId || selectedBook.id) && styles.saveBtnActive
-                    ]}
-                    onPress={() => saveBook(selectedBook)}
-                  >
-                    <Heart 
-                      size={18} 
-                      color={savedBookIds.has(selectedBook.googleId || selectedBook.id) ? "#fff" : "#2563eb"} 
-                      fill={savedBookIds.has(selectedBook.googleId || selectedBook.id) ? "#fff" : "transparent"} 
-                    />
-                    <Text style={[
-                      styles.saveBtnText,
-                      savedBookIds.has(selectedBook.googleId || selectedBook.id) && styles.saveBtnTextActive
-                    ]}>
-                      {savedBookIds.has(selectedBook.googleId || selectedBook.id) ? 'SAVED TO LIBRARY' : 'SAVE TO LIBRARY'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <View style={styles.footerActionGroup}>
-                    <TouchableOpacity 
-                      style={styles.primaryBtn}
-                      onPress={() => Linking.openURL(selectedBook.previewLink)}
-                    >
-                      <BookOpen size={16} color="#fff" />
-                      <Text style={styles.primaryBtnText}>PREVIEW</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={styles.secondaryBtn}
-                      onPress={() => Linking.openURL(selectedBook.infoLink)}
-                    >
-                      <ExternalLink size={14} color="#64748b" />
-                      <Text style={styles.secondaryBtnText}>FULL INFO</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </>
-            )}
+      {/* Empty state */}
+      {!loading && books.length === 0 && error === '' && (
+        <View style={styles.emptyBox}>
+          <BookOpen size={40} color="#cbd5e1" />
+          <Text style={styles.emptyTitle}>Search the World's Books</Text>
+          <Text style={styles.emptySub}>
+            Powered by Open Library — millions of books,{'\n'}many with free full-text access.
+          </Text>
+          <View style={styles.tipRow}>
+            {['Classic novels', 'Science texts', 'History books'].map(t => (
+              <TouchableOpacity key={t} style={styles.tipChip} onPress={() => { setQuery(t); setTimeout(handleSearch, 50); }}>
+                <Text style={styles.tipText}>{t}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
+      )}
+
+      {/* Results */}
+      {!loading && books.length > 0 && (
+        <FlatList
+          data={books}
+          renderItem={renderBook}
+          keyExtractor={item => item.key}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={loadingMore ? (
+            <View style={styles.loadMoreBox}><ActivityIndicator color="#3b82f6" /></View>
+          ) : hasMore ? (
+            <TouchableOpacity style={styles.loadMoreBtn} onPress={loadMore}>
+              <Text style={styles.loadMoreText}>Load More</Text>
+            </TouchableOpacity>
+          ) : null}
+        />
+      )}
+
+      {/* Book Detail Modal */}
+      <Modal visible={!!selectedBook} animationType="slide" onRequestClose={() => setSelectedBook(null)}>
+        {selectedBook && (
+          <ScrollView style={styles.detailContainer} contentContainerStyle={styles.detailContent}>
+            {/* Cover hero */}
+            <View style={styles.detailHero}>
+              {selectedBook.cover_i ? (
+                <Image
+                  source={{ uri: COVER_URL(selectedBook.cover_i, 'L') }}
+                  style={styles.detailCover}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={[styles.detailCover, styles.detailCoverPlaceholder]}>
+                  <BookOpen size={48} color="#3b82f6" />
+                </View>
+              )}
+              <View style={styles.detailHeroOverlay} />
+            </View>
+
+            {/* Close */}
+            <TouchableOpacity style={styles.closeBtn} onPress={() => setSelectedBook(null)}>
+              <X size={20} color="#fff" />
+            </TouchableOpacity>
+
+            {/* Info card */}
+            <View style={styles.detailCard}>
+              <Text style={styles.detailTitle}>{selectedBook.title}</Text>
+              {selectedBook.author_name && (
+                <Text style={styles.detailAuthor}>{selectedBook.author_name.join(', ')}</Text>
+              )}
+
+              {/* Meta row */}
+              <View style={styles.detailMetaRow}>
+                {selectedBook.first_publish_year && (
+                  <View style={styles.metaChip}><Text style={styles.metaChipText}>First published {selectedBook.first_publish_year}</Text></View>
+                )}
+                {selectedBook.edition_count && (
+                  <View style={[styles.metaChip, { backgroundColor: '#eff6ff', borderColor: '#dbeafe' }]}>
+                    <Text style={[styles.metaChipText, { color: '#2563eb' }]}>{selectedBook.edition_count} editions</Text>
+                  </View>
+                )}
+                {(selectedBook.has_fulltext || selectedBook.public_scan_b) && (
+                  <View style={[styles.metaChip, { backgroundColor: '#ecfdf5', borderColor: '#d1fae5' }]}>
+                    <Text style={[styles.metaChipText, { color: '#10b981' }]}>✓ Free to read</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Description */}
+              {loadingDetail ? (
+                <ActivityIndicator color="#3b82f6" style={{ marginVertical: 16 }} />
+              ) : bookDetail && getDescription(bookDetail) ? (
+                <View style={styles.descBox}>
+                  <Text style={styles.descLabel}>ABOUT THIS BOOK</Text>
+                  <Text style={styles.descText}>{getDescription(bookDetail)}</Text>
+                </View>
+              ) : null}
+
+              {/* Subjects */}
+              {selectedBook.subject && selectedBook.subject.length > 0 && (
+                <View style={styles.subjectsBox}>
+                  <Text style={styles.descLabel}>SUBJECTS</Text>
+                  <View style={styles.subjectTagsRow}>
+                    {selectedBook.subject.slice(0, 8).map(s => (
+                      <View key={s} style={styles.subjectTag}><Text style={styles.subjectTagText}>{s}</Text></View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Action buttons */}
+              <View style={styles.actionRow}>
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => openArchive(selectedBook)}>
+                  <ExternalLink size={18} color="#fff" />
+                  <Text style={styles.primaryBtnText}>
+                    {selectedBook.has_fulltext || selectedBook.public_scan_b ? 'Read Free on Archive.org' : 'View on Open Library'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => Linking.openURL(`https://openlibrary.org${selectedBook.key}`)}
+                >
+                  <BookOpen size={18} color="#2563eb" />
+                  <Text style={styles.secondaryBtnText}>Open Library Page</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </ScrollView>
+        )}
       </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 20,
-    backgroundColor: '#fff',
+  container: { flex: 1, backgroundColor: '#f8fafc' },
+  header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  title: { fontSize: 18, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' },
+  subtitle: { fontSize: 10, fontWeight: '700', color: '#94a3b8', marginTop: 4, letterSpacing: 0.5 },
+
+  searchWrap: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  searchBox: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    borderRadius: 14, paddingHorizontal: 14, height: 48,
   },
-  searchSection: {
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    height: 52,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#1e293b',
-  },
+  searchInput: { flex: 1, fontSize: 14, color: '#1e293b', fontWeight: '500' },
   searchBtn: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 10,
+    width: 48, height: 48, backgroundColor: '#2563eb',
+    borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
-  searchBtnText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
+
+  subjectsScroll: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9', maxHeight: 56 },
+  subjectsContent: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
+  subjectChip: {
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,
+    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff',
   },
-  categories: {
-    marginTop: 12,
-  },
-  categoriesContent: {
-    paddingRight: 20,
-  },
-  categoryBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    borderRadius: 14,
-    marginRight: 10,
-  },
-  categoryBtnActive: {
-    backgroundColor: '#0f172a',
-    borderColor: '#0f172a',
-  },
-  categoryText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  categoryTextActive: {
-    color: '#fff',
-  },
-  listContent: {
-    paddingBottom: 20,
-  },
-  columnWrapper: {
-    justifyContent: 'space-between',
-    marginBottom: 16,
-  },
+  subjectText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+
+  errorBox: { margin: 16, padding: 14, backgroundColor: '#fef2f2', borderRadius: 14, borderWidth: 1, borderColor: '#fecaca', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  errorText: { fontSize: 12, color: '#ef4444', fontWeight: '600', flex: 1 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 12 },
+  retryText: { fontSize: 11, fontWeight: '700', color: '#ef4444' },
+
+  loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 13, color: '#94a3b8', fontWeight: '600' },
+
+  emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  emptyTitle: { fontSize: 16, fontWeight: '900', color: '#1e293b', marginTop: 20, textAlign: 'center' },
+  emptySub: { fontSize: 12, color: '#94a3b8', marginTop: 8, textAlign: 'center', lineHeight: 18 },
+  tipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 24, justifyContent: 'center' },
+  tipChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#dbeafe' },
+  tipText: { fontSize: 12, fontWeight: '700', color: '#2563eb' },
+
+  listContent: { padding: 16 },
   bookCard: {
-    width: '48%',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 16, marginBottom: 10, padding: 12,
+    borderWidth: 1, borderColor: '#f1f5f9',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  coverContainer: {
-    aspectRatio: 3/4,
-    borderRadius: 16,
-    overflow: 'hidden',
-    backgroundColor: '#f1f5f9',
-    position: 'relative',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+  coverWrap: { position: 'relative', marginRight: 14 },
+  cover: { width: 52, height: 72, borderRadius: 8, backgroundColor: '#f1f5f9' },
+  coverPlaceholder: { width: 52, height: 72, borderRadius: 8, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
+  freeBadge: { position: 'absolute', top: -4, right: -4, backgroundColor: '#10b981', borderRadius: 6, paddingHorizontal: 4, paddingVertical: 2 },
+  freeBadgeText: { fontSize: 7, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
+  bookInfo: { flex: 1 },
+  bookTitle: { fontSize: 13, fontWeight: '700', color: '#1e293b', lineHeight: 18 },
+  bookAuthor: { fontSize: 11, color: '#64748b', marginTop: 3, fontWeight: '500' },
+  bookMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 8 },
+  metaChip: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 7, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' },
+  metaChipText: { fontSize: 9, fontWeight: '700', color: '#64748b' },
+
+  loadMoreBox: { padding: 20, alignItems: 'center' },
+  loadMoreBtn: { margin: 16, backgroundColor: '#eff6ff', borderRadius: 14, padding: 14, alignItems: 'center', borderWidth: 1, borderColor: '#dbeafe' },
+  loadMoreText: { fontSize: 12, fontWeight: '800', color: '#2563eb' },
+
+  // Detail
+  detailContainer: { flex: 1, backgroundColor: '#f8fafc' },
+  detailContent: { paddingBottom: 40 },
+  detailHero: { height: 260, position: 'relative' },
+  detailCover: { width: '100%', height: '100%' },
+  detailCoverPlaceholder: { backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center' },
+  detailHeroOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 100,
+    // gradient-like fade via background
+    backgroundColor: 'rgba(248,250,252,0.0)',
   },
-  cover: {
-    width: '100%',
-    height: '100%',
+  closeBtn: {
+    position: 'absolute', top: 48, right: 16,
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
   },
-  sourceTag: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  sourceTagText: {
-    fontSize: 7,
-    fontWeight: '900',
-    color: '#475569',
-    textTransform: 'uppercase',
-  },
-  savedBadge: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: '#ef4444',
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  bookInfo: {
-    marginTop: 8,
-    paddingHorizontal: 2,
-  },
-  bookTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1e293b',
-    lineHeight: 14,
-  },
-  bookMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  bookAuthor: {
-    fontSize: 10,
-    color: '#94a3b8',
-    flex: 1,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ratingText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#fbbf24',
-    marginLeft: 2,
-  },
-  statusBox: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94a3b8',
-    marginTop: 12,
-    letterSpacing: 1,
-  },
-  emptyState: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyIconBox: {
-    width: 64,
-    height: 64,
-    backgroundColor: '#f8fafc',
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 4,
-  },
-  emptySubtitle: {
-    fontSize: 11,
-    color: '#94a3b8',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalCloseArea: {
-    flex: 1,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    minHeight: '80%',
-    paddingBottom: 40,
-  },
-  modalCloseBtn: {
-    position: 'absolute',
-    top: 20,
-    right: 20,
-    zIndex: 10,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalHero: {
-    height: 200,
-    backgroundColor: '#f1f5f9',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalHeroCover: {
-    width: 110,
-    height: 160,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#fff',
-    transform: [{ rotate: '-2deg' }],
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-  },
-  modalDetails: {
-    padding: 24,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#0f172a',
-    textAlign: 'center',
-    lineHeight: 26,
-  },
-  modalAuthor: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#3b82f6',
-    textAlign: 'center',
-    marginTop: 8,
-    textTransform: 'uppercase',
-  },
-  categoriesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-  },
-  categoryBadge: {
-    backgroundColor: '#eff6ff',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#dbeafe',
-  },
-  categoryBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#2563eb',
-    textTransform: 'uppercase',
-  },
-  ratingSection: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 20,
-  },
-  ratingBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 6,
-  },
-  ratingValue: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0f172a',
-  },
-  ratingMax: {
-    fontSize: 10,
-    color: '#94a3b8',
-    marginLeft: -4,
-  },
-  metaBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    gap: 6,
-  },
-  metaBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    textTransform: 'uppercase',
-  },
-  descriptionBox: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 16,
-    padding: 16,
-    marginTop: 20,
-  },
-  descriptionText: {
-    fontSize: 12,
-    color: '#64748b',
-    lineHeight: 18,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-    gap: 12,
-  },
-  metaItem: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    padding: 12,
-    borderRadius: 12,
-  },
-  metaLabel: {
-    fontSize: 8,
-    fontWeight: '900',
-    color: '#94a3b8',
-    letterSpacing: 1,
-  },
-  metaValue: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginTop: 2,
-  },
-  modalFooter: {
-    padding: 24,
-    gap: 16,
-  },
-  saveBtn: {
-    backgroundColor: '#eff6ff',
-    height: 56,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    borderWidth: 2,
-    borderColor: '#dbeafe',
-  },
-  saveBtnActive: {
-    backgroundColor: '#2563eb',
-    borderColor: '#2563eb',
-  },
-  saveBtnText: {
-    color: '#2563eb',
-    fontSize: 12,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  saveBtnTextActive: {
-    color: '#fff',
-  },
-  footerActionGroup: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  detailCard: { backgroundColor: '#fff', marginHorizontal: 16, marginTop: -24, borderRadius: 24, padding: 24, borderWidth: 1, borderColor: '#f1f5f9', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.06, shadowRadius: 16, elevation: 4 },
+  detailTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', lineHeight: 26 },
+  detailAuthor: { fontSize: 13, color: '#64748b', marginTop: 6, fontWeight: '600' },
+  detailMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
+  descBox: { marginTop: 20 },
+  descLabel: { fontSize: 9, fontWeight: '900', color: '#94a3b8', letterSpacing: 1.5, marginBottom: 8 },
+  descText: { fontSize: 13, color: '#475569', lineHeight: 20 },
+  subjectsBox: { marginTop: 20 },
+  subjectTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  subjectTag: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' },
+  subjectTagText: { fontSize: 11, color: '#64748b', fontWeight: '600' },
+  actionRow: { marginTop: 24, gap: 10 },
   primaryBtn: {
-    flex: 1.5,
-    backgroundColor: '#0f172a',
-    height: 52,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#0f172a', height: 56, borderRadius: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15, shadowRadius: 8, elevation: 4,
   },
-  primaryBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
+  primaryBtnText: { fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 0.5 },
   secondaryBtn: {
-    flex: 1,
-    backgroundColor: '#f1f5f9',
-    height: 52,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
+    backgroundColor: '#eff6ff', height: 52, borderRadius: 16,
+    borderWidth: 1, borderColor: '#dbeafe',
   },
-  secondaryBtnText: {
-    color: '#64748b',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
+  secondaryBtnText: { fontSize: 13, fontWeight: '700', color: '#2563eb' },
 });

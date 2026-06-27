@@ -19,6 +19,8 @@
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.22",
     "expo-linking": "~8.0.12",
+    "expo-media-library": "~18.2.1",
+    "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.23",
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",

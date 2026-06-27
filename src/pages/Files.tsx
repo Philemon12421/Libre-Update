@@ -1,587 +1,382 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  FlatList, 
-  Modal, 
-  TextInput,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Image,
-  Platform
+import {
+  View, Text, TouchableOpacity, StyleSheet, FlatList,
+  Modal, TextInput, ActivityIndicator, Alert, ScrollView,
+  Image, Platform,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
-import { 
-  FileText, 
-  Image as ImageIcon, 
-  File, 
-  Download, 
-  Trash2, 
-  Upload,
-  X, 
-  ChevronRight, 
-  Edit2, 
-  Plus, 
-  FolderPlus,
-  Search,
-  ArrowUpDown,
-  BookOpen,
-  FileCode,
-  Layout
+import {
+  FileText, Image as ImageIcon, File, Download, Trash2,
+  Upload, X, Edit2, Plus, FolderPlus, Search,
+  ArrowUpDown, BookOpen, FileCode, Layout, Star,
+  Folder as FolderIcon, MoreHorizontal,
 } from 'lucide-react-native';
 import { db, LibreFile, LibreFolder } from '../lib/db';
 import { format } from 'date-fns';
 
 type SortOption = 'newest' | 'oldest' | 'name-asc' | 'name-desc';
 
-const FOLDER_COLORS = [
-  { name: 'blue',    color: '#3b82f6', bg: '#eff6ff', border: '#dbeafe' },
-  { name: 'rose',    color: '#f43f5e', bg: '#fff1f2', border: '#ffe4e6' },
-  { name: 'emerald', color: '#10b981', bg: '#ecfdf5', border: '#d1fae5' },
-  { name: 'amber',   color: '#f59e0b', bg: '#fffbeb', border: '#fef3c7' },
-  { name: 'violet',  color: '#8b5cf6', bg: '#f5f3ff', border: '#ede9fe' },
+type Category =
+  | 'all' | 'pdf' | 'word' | 'ppt' | 'txt'
+  | 'image' | 'dirs' | 'favorites' | 'others';
+
+const CATEGORIES: { id: Category; label: string; icon: any; color: string }[] = [
+  { id: 'all',       label: 'All',       icon: File,       color: '#64748b' },
+  { id: 'pdf',       label: 'PDF',       icon: FileText,   color: '#ef4444' },
+  { id: 'word',      label: 'Word',      icon: FileText,   color: '#2563eb' },
+  { id: 'ppt',       label: 'PPT',       icon: Layout,     color: '#f97316' },
+  { id: 'txt',       label: 'Text',      icon: BookOpen,   color: '#6366f1' },
+  { id: 'image',     label: 'Images',    icon: ImageIcon,  color: '#10b981' },
+  { id: 'dirs',      label: 'Folders',   icon: FolderIcon, color: '#f59e0b' },
+  { id: 'favorites', label: 'Starred',   icon: Star,       color: '#ec4899' },
+  { id: 'others',    label: 'Others',    icon: MoreHorizontal, color: '#94a3b8' },
 ];
+
+function matchCategory(file: LibreFile, cat: Category): boolean {
+  const t = (file.type ?? '').toLowerCase();
+  const n = (file.name ?? '').toLowerCase();
+  const ext = n.split('.').pop() ?? '';
+
+  switch (cat) {
+    case 'all': return true;
+    case 'pdf': return t.includes('pdf') || ext === 'pdf';
+    case 'word':
+      return t.includes('word') || t.includes('msword') ||
+        ['doc', 'docx', 'odt', 'rtf'].includes(ext);
+    case 'ppt':
+      return t.includes('presentation') || t.includes('powerpoint') ||
+        ['ppt', 'pptx', 'odp'].includes(ext);
+    case 'txt':
+      return t.includes('text') || t.includes('json') ||
+        ['txt', 'md', 'csv', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'xml', 'yaml', 'yml'].includes(ext);
+    case 'image':
+      return t.includes('image') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'heic'].includes(ext);
+    case 'dirs': return false; // shown separately
+    case 'favorites': return !!(file as any).starred;
+    case 'others': {
+      const known =
+        t.includes('pdf') || t.includes('word') || t.includes('msword') ||
+        t.includes('presentation') || t.includes('powerpoint') ||
+        t.includes('text') || t.includes('json') || t.includes('image') ||
+        ['doc','docx','odt','rtf','ppt','pptx','odp','txt','md','csv','json',
+         'js','ts','jsx','tsx','html','css','xml','yaml','yml',
+         'jpg','jpeg','png','gif','webp','svg','bmp','heic','pdf'].includes(ext);
+      return !known;
+    }
+    default: return true;
+  }
+}
+
+function getIcon(type: string, size = 18, name = '') {
+  const t = type.toLowerCase();
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (t.includes('pdf') || ext === 'pdf')
+    return <FileText color="#ef4444" size={size} />;
+  if (t.includes('image') || ['jpg','jpeg','png','gif','webp'].includes(ext))
+    return <ImageIcon color="#10b981" size={size} />;
+  if (t.includes('text') || ['txt','md'].includes(ext))
+    return <BookOpen color="#6366f1" size={size} />;
+  if (t.includes('word') || ['doc','docx'].includes(ext))
+    return <FileText color="#2563eb" size={size} />;
+  if (t.includes('sheet') || t.includes('excel') || ['xls','xlsx'].includes(ext))
+    return <Layout color="#10b981" size={size} />;
+  if (t.includes('presentation') || ['ppt','pptx'].includes(ext))
+    return <Layout color="#f97316" size={size} />;
+  if (t.includes('javascript') || t.includes('json') || t.includes('code'))
+    return <FileCode color="#f59e0b" size={size} />;
+  return <File color="#94a3b8" size={size} />;
+}
+
+function formatSize(bytes: number) {
+  if (!bytes) return '0 B';
+  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
 
 export default function FilesPage({ activeFolderId }: { activeFolderId?: number }) {
   const [files, setFiles] = useState<LibreFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [previewFile, setPreviewFile] = useState<LibreFile | null>(null);
-  const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
-  const [isSelectMode, setIsSelectMode] = useState(false);
   const [folders, setFolders] = useState<LibreFolder[]>([]);
-  const [showMoveModal, setShowMoveModal] = useState(false);
-  const [showRenameModal, setShowRenameModal] = useState(false);
-  const [editingFile, setEditingFile] = useState<LibreFile | null>(null);
-  const [newFileName, setNewFileName] = useState('');
+  const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [category, setCategory] = useState<Category>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOption, setSortOption] = useState<SortOption>('newest');
   const [showSortOptions, setShowSortOptions] = useState(false);
-  const [textContent, setTextContent] = useState<string>('');
+
+  const [previewFile, setPreviewFile] = useState<LibreFile | null>(null);
+  const [textContent, setTextContent] = useState('');
   const [loadingText, setLoadingText] = useState(false);
 
-  // New states for enhancements
-  const [showCreateNoteModal, setShowCreateNoteModal] = useState(false);
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showMoveModal, setShowMoveModal] = useState(false);
+
+  const [showRenameModal, setShowRenameModal] = useState(false);
+  const [editingFile, setEditingFile] = useState<LibreFile | null>(null);
+  const [newFileName, setNewFileName] = useState('');
+
+  const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteName, setNoteName] = useState('');
   const [noteContent, setNoteContent] = useState('');
   const [savingNote, setSavingNote] = useState(false);
-  const [isEditingText, setIsEditingText] = useState(false);
-  const [editText, setEditText] = useState('');
-  const [showTagModal, setShowTagModal] = useState(false);
-  const [tagInput, setTagInput] = useState('');
-  const [selectedTagsFilter, setSelectedTagsFilter] = useState<string[]>([]);
-  const [allFileTags, setAllFileTags] = useState<string[]>([]);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
     try {
-      let queryFetch;
-      if (activeFolderId) {
-        queryFetch = await db.files.where('folderId').equals(activeFolderId).toArray();
-      } else {
-        queryFetch = await db.files.toArray();
-      }
+      let query = activeFolderId
+        ? await db.files.where('folderId').equals(activeFolderId).toArray()
+        : await db.files.toArray();
 
-      // Extract all unique tags
-      const tagsSet = new Set<string>();
-      queryFetch.forEach(f => {
-        if (f.tags) {
-          f.tags.forEach(t => tagsSet.add(t));
-        }
-      });
-      setAllFileTags(Array.from(tagsSet));
-
-      // Local sorting
-      const sorted = [...queryFetch].sort((a, b) => {
+      const sorted = [...query].sort((a, b) => {
         if (sortOption === 'newest') return b.createdAt - a.createdAt;
         if (sortOption === 'oldest') return a.createdAt - b.createdAt;
         if (sortOption === 'name-asc') return a.name.localeCompare(b.name);
         if (sortOption === 'name-desc') return b.name.localeCompare(a.name);
         return 0;
       });
-
-      const allFolders = await db.folders.toArray();
-      setFolders(allFolders);
       setFiles(sorted);
+      setFolders(await db.folders.toArray());
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
-      setSelectedFileIds(new Set());
     }
   }, [activeFolderId, sortOption]);
 
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
   useEffect(() => {
-    if (previewFile) {
-      const loadTextContent = async () => {
-        const ext = previewFile.name.split('.').pop()?.toLowerCase();
-        const t = previewFile.type.toLowerCase();
-        const isText = t.includes('text') || t.includes('json') || t.includes('javascript') || t.includes('xml') ||
-          ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
-
-        if (isText) {
-          setLoadingText(true);
-          setTextContent('');
-          try {
-            if (Platform.OS === 'web') {
-              if (previewFile.data.startsWith('data:')) {
-                const base64Content = previewFile.data.split(',')[1];
-                const binString = atob(base64Content);
-                const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0)!);
-                const decoded = new TextDecoder().decode(bytes);
-                setTextContent(decoded);
-              } else {
-                const response = await fetch(previewFile.data);
-                const text = await response.text();
-                setTextContent(text);
-              }
-            } else {
-              const content = await FileSystem.readAsStringAsync(previewFile.data);
-              setTextContent(content);
-            }
-          } catch (err) {
-            console.error('Failed to read text file', err);
-            setTextContent('Error reading file content.');
-          } finally {
-            setLoadingText(false);
-          }
+    if (!previewFile) { setTextContent(''); return; }
+    const ext = previewFile.name.split('.').pop()?.toLowerCase() ?? '';
+    const t = previewFile.type.toLowerCase();
+    const isText = t.includes('text') || t.includes('json') ||
+      ['txt','md','json','js','ts','jsx','tsx','html','css','csv','yaml','yml'].includes(ext);
+    if (!isText) return;
+    setLoadingText(true);
+    (async () => {
+      try {
+        if (Platform.OS === 'web') {
+          const src = previewFile.data.startsWith('data:')
+            ? atob(previewFile.data.split(',')[1])
+            : await (await fetch(previewFile.data)).text();
+          setTextContent(src);
+        } else {
+          setTextContent(await FileSystem.readAsStringAsync(previewFile.data));
         }
-      };
-      loadTextContent();
-    } else {
-      setTextContent('');
-    }
+      } catch { setTextContent('Could not read file.'); }
+      finally { setLoadingText(false); }
+    })();
   }, [previewFile]);
 
-  const filteredFiles = files.filter(f => {
-    const matchesSearch = f.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTags = selectedTagsFilter.length === 0 || 
-      (f.tags && selectedTagsFilter.every(t => f.tags?.includes(t)));
-    return matchesSearch && matchesTags;
+  // Category counts
+  const counts: Record<Category, number> = {} as any;
+  CATEGORIES.forEach(c => {
+    counts[c.id] = c.id === 'dirs'
+      ? folders.length
+      : files.filter(f => matchCategory(f, c.id)).length;
   });
+
+  const filtered = (category === 'dirs' ? [] : files)
+    .filter(f => matchCategory(f, category))
+    .filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
   const pickDocument = async () => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
-        copyToCacheDirectory: true,
-      });
-
-      if (!result.canceled) {
-        setUploading(true);
-        setUploadProgress(0);
-        
-        const { name, size, uri, mimeType } = result.assets[0];
-        
-        // Simulate progress
-        const interval = setInterval(() => {
-          setUploadProgress(prev => {
-            if (prev >= 95) {
-              clearInterval(interval);
-              return 95;
-            }
-            return prev + 5;
+      const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true });
+      if (result.canceled) return;
+      setUploading(true);
+      const { name, size, uri, mimeType } = result.assets[0];
+      let finalUri = uri;
+      if (Platform.OS !== 'web') {
+        const dir = FileSystem.documentDirectory + 'libre_files/';
+        const info = await FileSystem.getInfoAsync(dir);
+        if (!info.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+        finalUri = dir + Date.now() + '_' + name;
+        await FileSystem.copyAsync({ from: uri, to: finalUri });
+      } else if (size && size < 2 * 1024 * 1024) {
+        try {
+          const blob = await (await fetch(uri)).blob();
+          finalUri = await new Promise<string>((res, rej) => {
+            const r = new FileReader();
+            r.onloadend = () => res(r.result as string);
+            r.onerror = rej;
+            r.readAsDataURL(blob);
           });
-        }, 50);
-
-        let finalUri = uri;
-        if (Platform.OS !== 'web') {
-          const permanentDirectory = FileSystem.documentDirectory + 'libre_files/';
-          const dirInfo = await FileSystem.getInfoAsync(permanentDirectory);
-          if (!dirInfo.exists) {
-            await FileSystem.makeDirectoryAsync(permanentDirectory, { intermediates: true });
-          }
-          finalUri = permanentDirectory + Date.now() + '_' + name;
-          await FileSystem.copyAsync({ from: uri, to: finalUri });
-        } else {
-          if (size && size < 2 * 1024 * 1024) {
-            try {
-              const response = await fetch(uri);
-              const blob = await response.blob();
-              const base64Promise = new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-              finalUri = await base64Promise;
-            } catch (err) {
-              console.warn('Web base64 conversion failed, using temp URI', err);
-            }
-          }
-        }
-
-        await db.files.add({
-          id: Date.now(),
-          name,
-          type: mimeType || 'application/octet-stream',
-          size: size || 0,
-          data: finalUri,
-          folderId: activeFolderId,
-          createdAt: Date.now(),
-        });
-
-        setUploadProgress(100);
-        setTimeout(() => {
-          setUploading(false);
-          setUploadProgress(0);
-          Alert.alert('Success', 'File added successfully');
-          fetchFiles();
-        }, 200);
-        
-        clearInterval(interval);
+        } catch {}
       }
+      await db.files.add({
+        id: Date.now(), name, type: mimeType ?? 'application/octet-stream',
+        size: size ?? 0, data: finalUri, folderId: activeFolderId, createdAt: Date.now(),
+      });
+      Alert.alert('✓ Uploaded', `"${name}" added successfully.`);
+      fetchFiles();
     } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Failed to pick document');
+      Alert.alert('Error', 'Failed to pick file.');
     } finally {
       setUploading(false);
     }
   };
 
+  const toggleStar = async (file: LibreFile) => {
+    await db.files.update(file.id!, { starred: !(file as any).starred } as any);
+    fetchFiles();
+  };
+
+  const deleteFile = (id: number) => {
+    Alert.alert('Delete', 'Permanently delete this file?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => { await db.files.delete(id); fetchFiles(); } },
+    ]);
+  };
+
   const renameFile = async () => {
     if (!newFileName.trim() || !editingFile?.id) return;
     await db.files.update(editingFile.id, { name: newFileName.trim() });
-    setShowRenameModal(false);
-    setEditingFile(null);
-    setNewFileName('');
+    setShowRenameModal(false); setEditingFile(null); setNewFileName('');
     fetchFiles();
   };
 
-  const createTextNote = async () => {
-    if (!noteName.trim()) {
-      Alert.alert('Error', 'Please enter a note name');
-      return;
-    }
+  const createNote = async () => {
+    if (!noteName.trim()) { Alert.alert('Error', 'Enter a note name.'); return; }
     setSavingNote(true);
     try {
-      let finalName = noteName.trim();
-      if (!finalName.endsWith('.txt') && !finalName.endsWith('.md')) {
-        finalName += '.txt';
-      }
-      const textData = noteContent;
-      const sizeBytes = textData.length;
-      let finalUri = '';
-
+      let name = noteName.trim();
+      if (!name.endsWith('.txt') && !name.endsWith('.md')) name += '.txt';
+      let uri = '';
       if (Platform.OS !== 'web') {
-        const permanentDirectory = FileSystem.documentDirectory + 'libre_files/';
-        const dirInfo = await FileSystem.getInfoAsync(permanentDirectory);
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(permanentDirectory, { intermediates: true });
-        }
-        finalUri = permanentDirectory + Date.now() + '_' + finalName;
-        await FileSystem.writeAsStringAsync(finalUri, textData);
+        const dir = FileSystem.documentDirectory + 'libre_files/';
+        const info = await FileSystem.getInfoAsync(dir);
+        if (!info.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+        uri = dir + Date.now() + '_' + name;
+        await FileSystem.writeAsStringAsync(uri, noteContent);
       } else {
-        const base64Data = btoa(unescape(encodeURIComponent(textData)));
-        finalUri = `data:text/plain;base64,${base64Data}`;
+        uri = `data:text/plain;base64,${btoa(unescape(encodeURIComponent(noteContent)))}`;
       }
-
       await db.files.add({
-        id: Date.now(),
-        name: finalName,
-        type: 'text/plain',
-        size: sizeBytes,
-        data: finalUri,
-        folderId: activeFolderId,
-        createdAt: Date.now(),
-        tags: [],
+        id: Date.now(), name, type: 'text/plain', size: noteContent.length,
+        data: uri, folderId: activeFolderId, createdAt: Date.now(),
       });
-
-      setShowCreateNoteModal(false);
-      setNoteName('');
-      setNoteContent('');
-      Alert.alert('Success', 'Note created successfully');
+      setShowNoteModal(false); setNoteName(''); setNoteContent('');
+      Alert.alert('✓ Created', `Note "${name}" saved.`);
       fetchFiles();
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Failed to create note');
-    } finally {
-      setSavingNote(false);
-    }
+    } catch { Alert.alert('Error', 'Failed to create note.'); }
+    finally { setSavingNote(false); }
   };
 
-  const saveTextChanges = async () => {
-    if (!previewFile?.id) return;
-    try {
-      const sizeBytes = editText.length;
-      let finalUri = previewFile.data;
-
-      if (Platform.OS !== 'web') {
-        await FileSystem.writeAsStringAsync(previewFile.data, editText);
-      } else {
-        const base64Data = btoa(unescape(encodeURIComponent(editText)));
-        finalUri = `data:text/plain;base64,${base64Data}`;
-      }
-
-      await db.files.update(previewFile.id, { 
-        data: finalUri, 
-        size: sizeBytes 
-      });
-
-      setPreviewFile({
-        ...previewFile,
-        data: finalUri,
-        size: sizeBytes
-      });
-      setTextContent(editText);
-      setIsEditingText(false);
-      Alert.alert('Success', 'File saved successfully');
-      fetchFiles();
-    } catch (err) {
-      console.error('Failed to save file changes', err);
-      Alert.alert('Error', 'Could not save changes');
-    }
-  };
-
-  const addTagToFile = async (tag: string) => {
-    const trimmed = tag.trim().toLowerCase();
-    if (!trimmed || !previewFile) return;
-    const currentTags = previewFile.tags || [];
-    if (currentTags.includes(trimmed)) return;
-    
-    const nextTags = [...currentTags, trimmed];
-    await db.files.update(previewFile.id!, { tags: nextTags });
-    setPreviewFile({ ...previewFile, tags: nextTags });
-    fetchFiles();
-  };
-
-  const removeTagFromFile = async (tag: string) => {
-    if (!previewFile) return;
-    const currentTags = previewFile.tags || [];
-    const nextTags = currentTags.filter(t => t !== tag);
-    
-    await db.files.update(previewFile.id!, { tags: nextTags });
-    setPreviewFile({ ...previewFile, tags: nextTags });
-    fetchFiles();
-  };
-
-  const deleteFile = async (id: number) => {
-    Alert.alert(
-      'Delete File',
-      'Are you sure you want to delete this file permanently?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            await db.files.delete(id);
-            fetchFiles();
-          }
-        }
-      ]
-    );
-  };
-
-  const deleteSelected = async () => {
-    if (selectedFileIds.size === 0) return;
-    Alert.alert(
-      'Delete Selected',
-      `Delete ${selectedFileIds.size} file(s)?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            await Promise.all(Array.from(selectedFileIds).map(id => db.files.delete(id as number)));
-            setIsSelectMode(false);
-            fetchFiles();
-          }
-        }
-      ]
-    );
-  };
-
-  const shareFile = async (file: LibreFile) => {
-    if (!(await Sharing.isAvailableAsync())) {
-      Alert.alert('Error', 'Sharing is not available on this device');
-      return;
-    }
-    await Sharing.shareAsync(file.data);
-  };
-
-  const toggleSelect = (id: number) => {
-    const s = new Set(selectedFileIds);
-    s.has(id) ? s.delete(id) : s.add(id);
-    setSelectedFileIds(s);
+  const deleteSelected = () => {
+    Alert.alert('Delete', `Delete ${selectedIds.size} file(s)?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await Promise.all(Array.from(selectedIds).map(id => db.files.delete(id as number)));
+        setIsSelectMode(false); setSelectedIds(new Set()); fetchFiles();
+      }},
+    ]);
   };
 
   const moveSelected = async (folderId: number | null) => {
-    if (selectedFileIds.size === 0) return;
-    await Promise.all(Array.from(selectedFileIds).map(id => db.files.update(id as number, { folderId: folderId || undefined })));
-    setShowMoveModal(false);
-    setIsSelectMode(false);
-    fetchFiles();
-  };
-
-  const getIcon = (type: string, size = 18, name = '') => {
-    const t = type.toLowerCase();
-    const n = name.toLowerCase();
-    
-    if (t.includes('pdf') || n.endsWith('.pdf')) 
-      return <FileText color="#ef4444" size={size} />;
-    
-    if (t.includes('image')) 
-      return <ImageIcon color="#3b82f6" size={size} />;
-    
-    if (t.includes('text') || n.endsWith('.txt')) 
-      return <BookOpen color="#6366f1" size={size} />;
-    
-    if (t.includes('word') || n.endsWith('.doc') || n.endsWith('.docx')) 
-      return <FileText color="#2563eb" size={size} />;
-    
-    if (t.includes('sheet') || t.includes('excel') || n.endsWith('.xls') || n.endsWith('.xlsx')) 
-      return <Layout color="#10b981" size={size} />;
-    
-    if (t.includes('javascript') || t.includes('json') || t.includes('code')) 
-      return <FileCode color="#f59e0b" size={size} />;
-    
-    return <File color="#94a3b8" size={size} />;
-  };
-
-  const formatSize = (bytes: number) => {
-    if (!bytes) return '0 B';
-    const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    await Promise.all(Array.from(selectedIds).map(id =>
+      db.files.update(id as number, { folderId: folderId ?? undefined })
+    ));
+    setShowMoveModal(false); setIsSelectMode(false); setSelectedIds(new Set()); fetchFiles();
   };
 
   const renderFile = ({ item }: { item: LibreFile }) => {
-    const isSelected = selectedFileIds.has(item.id!);
+    const isSelected = selectedIds.has(item.id!);
+    const starred = !!(item as any).starred;
     return (
       <TouchableOpacity
-        onPress={() => {
-          if (isSelectMode) toggleSelect(item.id!);
-          else setPreviewFile(item);
-        }}
-        style={[
-          styles.fileItem,
-          isSelectMode && isSelected && styles.fileItemSelected
-        ]}
+        style={[styles.fileItem, isSelected && styles.fileItemSelected]}
+        onPress={() => isSelectMode ? (setSelectedIds(prev => { const s = new Set(prev); s.has(item.id!) ? s.delete(item.id!) : s.add(item.id!); return s; })) : setPreviewFile(item)}
+        onLongPress={() => { setIsSelectMode(true); setSelectedIds(new Set([item.id!])); }}
+        activeOpacity={0.7}
       >
         {isSelectMode && (
           <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
             {isSelected && <View style={styles.checkboxInner} />}
           </View>
         )}
-        <View style={styles.fileIconContainer}>
-          {getIcon(item.type, 18, item.name)}
-        </View>
+        <View style={styles.fileIconWrap}>{getIcon(item.type, 18, item.name)}</View>
         <View style={styles.fileInfo}>
           <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.fileMeta}>
-            {formatSize(item.size)} · {format(item.createdAt, 'MMM d, yyyy')}
-          </Text>
+          <Text style={styles.fileMeta}>{formatSize(item.size)} · {format(item.createdAt, 'MMM d, yyyy')}</Text>
         </View>
-        
-        <TouchableOpacity
-          onPress={() => {
-            setEditingFile(item);
-            setNewFileName(item.name);
-            setShowRenameModal(true);
-          }}
-          style={styles.actionBtn}
-        >
+        <TouchableOpacity onPress={() => toggleStar(item)} style={styles.actionBtn}>
+          <Star size={14} color={starred ? '#f59e0b' : '#cbd5e1'} fill={starred ? '#f59e0b' : 'none'} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => { setEditingFile(item); setNewFileName(item.name); setShowRenameModal(true); }} style={styles.actionBtn}>
           <Edit2 size={14} color="#94a3b8" />
         </TouchableOpacity>
-        
-        <TouchableOpacity
-          onPress={() => deleteFile(item.id!)}
-          style={styles.actionBtn}
-        >
+        <TouchableOpacity onPress={() => deleteFile(item.id!)} style={styles.actionBtn}>
           <Trash2 size={14} color="#94a3b8" />
         </TouchableOpacity>
       </TouchableOpacity>
     );
   };
 
+  const renderFolder = ({ item }: { item: LibreFolder }) => (
+    <View style={styles.fileItem}>
+      <View style={[styles.fileIconWrap, { backgroundColor: '#fffbeb' }]}>
+        <FolderIcon size={18} color="#f59e0b" />
+      </View>
+      <View style={styles.fileInfo}>
+        <Text style={styles.fileName}>{item.name}</Text>
+        <Text style={styles.fileMeta}>Folder</Text>
+      </View>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Files</Text>
-          <Text style={styles.subtitle}>Resource Manager</Text>
-        </View>
-        
+        <Text style={styles.title}>Files</Text>
         <View style={styles.headerActions}>
-          {files.length > 0 && (
-            <TouchableOpacity
-              onPress={() => {
-                setIsSelectMode(!isSelectMode);
-                setSelectedFileIds(new Set());
-              }}
-              style={[styles.selectBtn, isSelectMode && styles.selectBtnActive]}
-            >
-              <Text style={[styles.selectBtnText, isSelectMode && styles.selectBtnTextActive]}>
-                {isSelectMode ? 'Done' : 'Select'}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.actionCard} onPress={pickDocument} disabled={uploading}>
+            {uploading
+              ? <ActivityIndicator color="#2563eb" size="small" />
+              : <><Upload size={14} color="#2563eb" /><Text style={styles.actionCardText}>Upload</Text></>}
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionCard, { backgroundColor: '#ecfdf5', borderColor: '#d1fae5' }]} onPress={() => setShowNoteModal(true)}>
+            <Plus size={14} color="#10b981" /><Text style={[styles.actionCardText, { color: '#10b981' }]}>Note</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Action Cards Row */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity 
-          style={[styles.actionCard, { marginRight: 10 }]}
-          onPress={pickDocument}
-          disabled={uploading}
-        >
-          {uploading ? (
-            <View style={styles.progressContainer}>
-              <ActivityIndicator color="#3b82f6" size="small" />
-              <Text style={styles.progressText}>{uploadProgress}%</Text>
-              <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: `${uploadProgress}%` }]} />
+      {/* Category tabs */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabsContent}>
+        {CATEGORIES.map(cat => {
+          const Icon = cat.icon;
+          const isActive = category === cat.id;
+          return (
+            <TouchableOpacity
+              key={cat.id}
+              style={[styles.tab, isActive && { backgroundColor: cat.color, borderColor: cat.color }]}
+              onPress={() => setCategory(cat.id)}
+              activeOpacity={0.7}
+            >
+              <Icon size={12} color={isActive ? '#fff' : cat.color} strokeWidth={2} />
+              <Text style={[styles.tabText, isActive && { color: '#fff' }]}>{cat.label}</Text>
+              <View style={[styles.tabCount, { backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : cat.color + '18' }]}>
+                <Text style={[styles.tabCountText, { color: isActive ? '#fff' : cat.color }]}>{counts[cat.id]}</Text>
               </View>
-            </View>
-          ) : (
-            <>
-              <View style={styles.actionIconBox}>
-                <Upload size={18} color="#2563eb" />
-              </View>
-              <View style={styles.actionTextContainer}>
-                <Text style={styles.actionCardTitle}>Upload File</Text>
-                <Text style={styles.actionCardSub}>Import from device</Text>
-              </View>
-            </>
-          )}
-        </TouchableOpacity>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
 
-        <TouchableOpacity 
-          style={styles.actionCard}
-          onPress={() => setShowCreateNoteModal(true)}
-        >
-          <View style={[styles.actionIconBox, { backgroundColor: '#eff6ff' }]}>
-            <Plus size={18} color="#2563eb" />
-          </View>
-          <View style={styles.actionTextContainer}>
-            <Text style={styles.actionCardTitle}>New Note</Text>
-            <Text style={styles.actionCardSub}>Create text note</Text>
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Search & Sort Row */}
-      <View style={styles.searchSortRow}>
-        <View style={styles.searchContainer}>
-          <Search size={16} color="#94a3b8" style={styles.searchIcon} />
+      {/* Search + Sort */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Search size={14} color="#94a3b8" />
           <TextInput
             style={styles.searchInput}
             placeholder="Search files..."
+            placeholderTextColor="#cbd5e1"
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholderTextColor="#cbd5e1"
           />
           {searchQuery !== '' && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -589,95 +384,58 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
             </TouchableOpacity>
           )}
         </View>
-        <TouchableOpacity 
-          style={styles.sortBtn}
-          onPress={() => setShowSortOptions(true)}
-        >
-          <ArrowUpDown size={16} color="#64748b" />
+        <TouchableOpacity style={styles.sortBtn} onPress={() => setShowSortOptions(true)}>
+          <ArrowUpDown size={14} color="#64748b" />
           <Text style={styles.sortBtnText}>
-            {sortOption === 'newest' ? 'Newest' : 
-             sortOption === 'oldest' ? 'Oldest' : 
-             sortOption === 'name-asc' ? 'A-Z' : 'Z-A'}
+            {sortOption === 'newest' ? 'New' : sortOption === 'oldest' ? 'Old' : sortOption === 'name-asc' ? 'A-Z' : 'Z-A'}
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Tags Filter Row */}
-      {allFileTags.length > 0 && (
-        <View style={styles.tagFilterRow}>
-          <Text style={styles.tagFilterLabel}>Tags:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagFilterScroll}>
-            {allFileTags.map(tag => {
-              const isSelected = selectedTagsFilter.includes(tag);
-              return (
-                <TouchableOpacity
-                  key={tag}
-                  onPress={() => {
-                    if (isSelected) {
-                      setSelectedTagsFilter(selectedTagsFilter.filter(t => t !== tag));
-                    } else {
-                      setSelectedTagsFilter([...selectedTagsFilter, tag]);
-                    }
-                  }}
-                  style={[
-                    styles.tagFilterBadge,
-                    isSelected && styles.tagFilterBadgeActive
-                  ]}
-                >
-                  <Text style={[
-                    styles.tagFilterBadgeText,
-                    isSelected && styles.tagFilterBadgeTextActive
-                  ]}>
-                    #{tag}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+      {/* Select mode toolbar */}
+      {isSelectMode && (
+        <View style={styles.selectBar}>
+          <Text style={styles.selectCount}>{selectedIds.size} selected</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={styles.selectAction} onPress={() => setShowMoveModal(true)}>
+              <Text style={styles.selectActionText}>Move</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.selectAction, { backgroundColor: '#fee2e2', borderColor: '#fecaca' }]} onPress={deleteSelected}>
+              <Text style={[styles.selectActionText, { color: '#ef4444' }]}>Delete</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.selectAction} onPress={() => { setIsSelectMode(false); setSelectedIds(new Set()); }}>
+              <X size={14} color="#64748b" />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
       {/* List */}
       {loading ? (
-        <View style={styles.loadingBox}>
-          <ActivityIndicator color="#94a3b8" />
-        </View>
-      ) : filteredFiles.length === 0 ? (
+        <View style={styles.emptyBox}><ActivityIndicator color="#94a3b8" /></View>
+      ) : category === 'dirs' ? (
+        folders.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <FolderIcon size={32} color="#cbd5e1" />
+            <Text style={styles.emptyTitle}>No Folders Yet</Text>
+            <Text style={styles.emptySub}>Create folders from the Library tab</Text>
+          </View>
+        ) : (
+          <FlatList data={folders} renderItem={renderFolder} keyExtractor={i => String(i.id)} contentContainerStyle={styles.listContent} />
+        )
+      ) : filtered.length === 0 ? (
         <View style={styles.emptyBox}>
-          <FileText size={32} color="#cbd5e1" />
-          <Text style={styles.emptyTitle}>{searchQuery ? 'No Results' : 'No Files Yet'}</Text>
-          <Text style={styles.emptySubtitle}>
-            {searchQuery ? 'Try a different search term' : 'Upload your first file above'}
-          </Text>
+          <File size={32} color="#cbd5e1" />
+          <Text style={styles.emptyTitle}>{searchQuery ? 'No Results' : 'No Files Here'}</Text>
+          <Text style={styles.emptySub}>{searchQuery ? 'Try different keywords' : 'Upload a file to get started'}</Text>
         </View>
       ) : (
         <FlatList
-          data={filteredFiles}
+          data={filtered}
           renderItem={renderFile}
-          keyExtractor={item => item.id!.toString()}
+          keyExtractor={i => String(i.id)}
           contentContainerStyle={styles.listContent}
         />
-      )}
-
-      {/* Bulk Actions */}
-      {isSelectMode && selectedFileIds.size > 0 && (
-        <View style={styles.bulkBar}>
-          <Text style={styles.bulkCount}>{selectedFileIds.size} SELECTED</Text>
-          <View style={styles.bulkActions}>
-            <TouchableOpacity 
-              style={styles.moveBtn}
-              onPress={() => setShowMoveModal(true)}
-            >
-              <Text style={styles.moveBtnText}>Move</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.deleteBulkBtn}
-              onPress={deleteSelected}
-            >
-              <Text style={styles.moveBtnText}>Delete</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
       )}
 
       {/* Preview Modal */}
@@ -685,157 +443,41 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         {previewFile && (
           <View style={styles.previewContainer}>
             <View style={styles.previewHeader}>
-              <View style={styles.previewHeaderInfo}>
+              <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
                 {getIcon(previewFile.type, 20, previewFile.name)}
-                <View style={styles.previewHeaderText}>
-                  <Text style={styles.previewFileName} numberOfLines={1}>{previewFile.name}</Text>
-                  <Text style={styles.previewFileSize}>{formatSize(previewFile.size)}</Text>
+                <View style={{ marginLeft: 12, flex: 1 }}>
+                  <Text style={styles.previewName} numberOfLines={1}>{previewFile.name}</Text>
+                  <Text style={styles.previewSize}>{formatSize(previewFile.size)}</Text>
                 </View>
               </View>
-              
-              {/* If it's text, show edit toggle */}
-              {(() => {
-                const ext = previewFile.name.split('.').pop()?.toLowerCase();
-                const t = previewFile.type.toLowerCase();
-                const isText = t.includes('text') || t.includes('json') || t.includes('javascript') || t.includes('xml') ||
-                  ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
-                
-                if (isText && !loadingText) {
-                  return (
-                    <TouchableOpacity 
-                      style={[styles.editToggleBtn, isEditingText && styles.editToggleBtnActive]} 
-                      onPress={() => {
-                        if (isEditingText) {
-                          setIsEditingText(false);
-                        } else {
-                          setEditText(textContent);
-                          setIsEditingText(true);
-                        }
-                      }}
-                    >
-                      <Text style={[styles.editToggleBtnText, isEditingText && styles.editToggleBtnTextActive]}>
-                        {isEditingText ? 'Cancel' : 'Edit'}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-                return null;
-              })()}
-
-              <TouchableOpacity onPress={() => { setPreviewFile(null); setIsEditingText(false); }} style={{ marginLeft: 12 }}>
+              <TouchableOpacity onPress={() => setPreviewFile(null)}>
                 <X size={24} color="#0f172a" />
               </TouchableOpacity>
             </View>
-
             <View style={styles.previewBody}>
               {previewFile.type.includes('image') ? (
-                <Image 
-                  source={{ uri: previewFile.data }} 
-                  style={styles.previewImage} 
-                  resizeMode="contain"
-                />
+                <Image source={{ uri: previewFile.data }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+              ) : loadingText ? (
+                <ActivityIndicator color="#3b82f6" />
+              ) : textContent ? (
+                <ScrollView style={styles.textScroll}>
+                  <Text style={styles.textContent}>{textContent}</Text>
+                </ScrollView>
               ) : (
-                (() => {
-                  const ext = previewFile.name.split('.').pop()?.toLowerCase();
-                  const t = previewFile.type.toLowerCase();
-                  const isText = t.includes('text') || t.includes('json') || t.includes('javascript') || t.includes('xml') ||
-                    ['txt', 'md', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'csv', 'yaml', 'yml'].includes(ext || '');
-
-                  if (isText) {
-                    if (loadingText) {
-                      return (
-                        <View style={styles.loadingBox}>
-                          <ActivityIndicator color="#3b82f6" />
-                          <Text style={styles.loadingText}>Reading file content...</Text>
-                        </View>
-                      );
-                    }
-                    if (isEditingText) {
-                      return (
-                        <TextInput
-                          style={styles.textEditorInput}
-                          multiline
-                          value={editText}
-                          onChangeText={setEditText}
-                          textAlignVertical="top"
-                          placeholder="Write something..."
-                          placeholderTextColor="#cbd5e1"
-                          autoFocus
-                        />
-                      );
-                    }
-                    return (
-                      <ScrollView style={styles.textPreviewScroll} contentContainerStyle={styles.textPreviewContainer}>
-                        <Text style={styles.textPreviewContent}>{textContent}</Text>
-                      </ScrollView>
-                    );
-                  }
-
-                  return (
-                    <View style={styles.noPreview}>
-                      <FileText size={48} color="#cbd5e1" />
-                      <Text style={styles.noPreviewText}>Preview not supported for this type</Text>
-                      <TouchableOpacity 
-                        style={styles.openBtn}
-                        onPress={() => shareFile(previewFile)}
-                      >
-                        <Text style={styles.openBtnText}>Open with other app</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                })()
-              )}
-            </View>
-
-            {/* Metadata / Tags Section */}
-            <View style={styles.previewMetaSection}>
-              <View style={styles.tagsHeader}>
-                <Text style={styles.previewMetaLabel}>TAGS</Text>
-                <TouchableOpacity 
-                  onPress={() => setShowTagModal(true)}
-                  style={styles.manageTagsBtn}
-                >
-                  <Text style={styles.manageTagsBtnText}>Manage</Text>
-                </TouchableOpacity>
-              </View>
-              <View style={styles.previewTagsList}>
-                {(previewFile.tags && previewFile.tags.length > 0) ? (
-                  previewFile.tags.map((tag) => (
-                    <View key={tag} style={styles.previewTagBadge}>
-                      <Text style={styles.previewTagBadgeText}>#{tag}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.noTagsText}>No tags added yet. Tap Manage to add tags.</Text>
-                )}
-              </View>
-            </View>
-
-            <View style={styles.previewFooter}>
-              {isEditingText ? (
-                <View style={styles.editorActionRow}>
-                  <TouchableOpacity 
-                    style={styles.saveEditBtn}
-                    onPress={saveTextChanges}
-                  >
-                    <Text style={styles.saveEditBtnText}>Save Changes</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={styles.cancelEditBtn}
-                    onPress={() => setIsEditingText(false)}
-                  >
-                    <Text style={styles.cancelEditBtnText}>Cancel</Text>
+                <View style={styles.noPreview}>
+                  <FileText size={48} color="#cbd5e1" />
+                  <Text style={styles.noPreviewText}>No preview for this file type</Text>
+                  <TouchableOpacity style={styles.openBtn} onPress={() => Sharing.shareAsync(previewFile.data)}>
+                    <Text style={styles.openBtnText}>Open with another app</Text>
                   </TouchableOpacity>
                 </View>
-              ) : (
-                <TouchableOpacity 
-                  style={styles.shareBtn}
-                  onPress={() => shareFile(previewFile)}
-                >
-                  <Download size={18} color="#fff" />
-                  <Text style={styles.shareBtnText}>Share / Save</Text>
-                </TouchableOpacity>
               )}
+            </View>
+            <View style={styles.previewFooter}>
+              <TouchableOpacity style={styles.shareBtn} onPress={() => Sharing.shareAsync(previewFile.data)}>
+                <Download size={18} color="#fff" />
+                <Text style={styles.shareBtnText}>Share / Export</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
@@ -843,35 +485,17 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       {/* Sort Modal */}
       <Modal visible={showSortOptions} transparent animationType="slide">
-        <View style={styles.bottomSheetOverlay}>
-          <View style={styles.bottomSheet}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
             <View style={styles.handle} />
-            <Text style={styles.bottomSheetTitle}>Sort Files</Text>
-            <View style={styles.sortList}>
-              {[
-                { id: 'newest', label: 'Newest First' },
-                { id: 'oldest', label: 'Oldest First' },
-                { id: 'name-asc', label: 'Name A-Z' },
-                { id: 'name-desc', label: 'Name Z-A' },
-              ].map((opt) => (
-                <TouchableOpacity 
-                  key={opt.id}
-                  style={[styles.sortOption, sortOption === opt.id && styles.sortOptionActive]}
-                  onPress={() => {
-                    setSortOption(opt.id as SortOption);
-                    setShowSortOptions(false);
-                  }}
-                >
-                  <Text style={[styles.sortOptionText, sortOption === opt.id && styles.sortOptionTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            <TouchableOpacity 
-              style={styles.sheetCancelBtn}
-              onPress={() => setShowSortOptions(false)}
-            >
+            <Text style={styles.sheetTitle}>Sort By</Text>
+            {([['newest','Newest First'],['oldest','Oldest First'],['name-asc','Name A-Z'],['name-desc','Name Z-A']] as const).map(([id, label]) => (
+              <TouchableOpacity key={id} style={[styles.sheetOption, sortOption === id && styles.sheetOptionActive]}
+                onPress={() => { setSortOption(id); setShowSortOptions(false); }}>
+                <Text style={[styles.sheetOptionText, sortOption === id && { color: '#2563eb' }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.sheetCancel} onPress={() => setShowSortOptions(false)}>
               <Text style={styles.sheetCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -880,23 +504,15 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       {/* Rename Modal */}
       <Modal visible={showRenameModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Rename File</Text>
-            <TextInput
-              style={styles.input}
-              value={newFileName}
-              onChangeText={setNewFileName}
-              autoFocus
-            />
-            <TouchableOpacity style={styles.confirmBtn} onPress={renameFile}>
-              <Text style={styles.confirmBtnText}>Save</Text>
+        <View style={styles.overlayCenter}>
+          <View style={styles.dialog}>
+            <Text style={styles.dialogTitle}>Rename File</Text>
+            <TextInput style={styles.dialogInput} value={newFileName} onChangeText={setNewFileName} autoFocus />
+            <TouchableOpacity style={styles.dialogBtn} onPress={renameFile}>
+              <Text style={styles.dialogBtnText}>Save</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-              style={styles.cancelBtn}
-              onPress={() => { setShowRenameModal(false); setEditingFile(null); }}
-            >
-              <Text style={styles.cancelLink}>Cancel</Text>
+            <TouchableOpacity onPress={() => { setShowRenameModal(false); setEditingFile(null); }}>
+              <Text style={styles.dialogCancel}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -904,143 +520,44 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       {/* Move Modal */}
       <Modal visible={showMoveModal} transparent animationType="slide">
-        <View style={styles.bottomSheetOverlay}>
-          <View style={styles.bottomSheet}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
             <View style={styles.handle} />
-            <Text style={styles.bottomSheetTitle}>Move to folder</Text>
-            <ScrollView style={styles.folderList}>
-              <TouchableOpacity 
-                style={styles.folderItem}
-                onPress={() => moveSelected(null)}
-              >
-                <View style={[styles.folderIconSmall, { backgroundColor: '#f1f5f9' }]}>
-                  <File size={14} color="#94a3b8" />
-                </View>
-                <Text style={styles.folderItemName}>Root (no folder)</Text>
+            <Text style={styles.sheetTitle}>Move to Folder</Text>
+            <ScrollView>
+              <TouchableOpacity style={styles.sheetOption} onPress={() => moveSelected(null)}>
+                <Text style={styles.sheetOptionText}>Root (no folder)</Text>
               </TouchableOpacity>
               {folders.map(f => (
-                <TouchableOpacity 
-                  key={f.id} 
-                  style={styles.folderItem}
-                  onPress={() => f.id && moveSelected(f.id)}
-                >
-                  <View style={[styles.folderIconSmall, { backgroundColor: '#eff6ff' }]}>
-                    <FolderPlus size={14} color="#3b82f6" />
-                  </View>
-                  <Text style={styles.folderItemName}>{f.name}</Text>
+                <TouchableOpacity key={f.id} style={styles.sheetOption} onPress={() => f.id && moveSelected(f.id)}>
+                  <FolderIcon size={14} color="#f59e0b" style={{ marginRight: 8 }} />
+                  <Text style={styles.sheetOptionText}>{f.name}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
-            <TouchableOpacity 
-              style={styles.sheetCancelBtn}
-              onPress={() => setShowMoveModal(false)}
-            >
+            <TouchableOpacity style={styles.sheetCancel} onPress={() => setShowMoveModal(false)}>
               <Text style={styles.sheetCancelText}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Create Note Modal */}
-      <Modal visible={showCreateNoteModal} transparent animationType="slide">
-        <View style={styles.bottomSheetOverlay}>
-          <View style={[styles.bottomSheet, { maxHeight: '80%' }]}>
+      {/* New Note Modal */}
+      <Modal visible={showNoteModal} transparent animationType="slide">
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { maxHeight: '80%' }]}>
             <View style={styles.handle} />
-            <Text style={styles.bottomSheetTitle}>Create New Note</Text>
-            
-            <TextInput
-              style={[styles.input, { textAlign: 'left', marginBottom: 12 }]}
-              placeholder="Filename (e.g. my_note.txt)"
-              placeholderTextColor="#94a3b8"
-              value={noteName}
-              onChangeText={setNoteName}
-            />
-
-            <TextInput
-              style={[styles.noteContentInput, { textAlignVertical: 'top' }]}
-              placeholder="Start typing your note here..."
-              placeholderTextColor="#cbd5e1"
-              multiline
-              numberOfLines={8}
-              value={noteContent}
-              onChangeText={setNoteContent}
-            />
-
-            <TouchableOpacity 
-              style={[styles.confirmBtn, { marginTop: 12 }]} 
-              onPress={createTextNote}
-              disabled={savingNote}
-            >
-              {savingNote ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={styles.confirmBtnText}>Create Note</Text>
-              )}
+            <Text style={styles.sheetTitle}>Create Note</Text>
+            <TextInput style={styles.dialogInput} placeholder="Filename (e.g. my_note.txt)"
+              placeholderTextColor="#94a3b8" value={noteName} onChangeText={setNoteName} />
+            <TextInput style={[styles.dialogInput, { height: 120, textAlignVertical: 'top', marginTop: 8 }]}
+              placeholder="Write your note here..." placeholderTextColor="#cbd5e1"
+              multiline value={noteContent} onChangeText={setNoteContent} />
+            <TouchableOpacity style={[styles.dialogBtn, { marginTop: 12 }]} onPress={createNote} disabled={savingNote}>
+              {savingNote ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.dialogBtnText}>Create Note</Text>}
             </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.sheetCancelBtn}
-              onPress={() => {
-                setShowCreateNoteModal(false);
-                setNoteName('');
-                setNoteContent('');
-              }}
-            >
+            <TouchableOpacity style={styles.sheetCancel} onPress={() => { setShowNoteModal(false); setNoteName(''); setNoteContent(''); }}>
               <Text style={styles.sheetCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Tag Manager Modal */}
-      <Modal visible={showTagModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Manage Tags</Text>
-            
-            {/* Current tags of file */}
-            <View style={styles.modalTagsList}>
-              {previewFile && previewFile.tags && previewFile.tags.map(t => (
-                <View key={t} style={styles.modalTagBadge}>
-                  <Text style={styles.modalTagBadgeText}>#{t}</Text>
-                  <TouchableOpacity onPress={() => removeTagFromFile(t)} style={styles.removeTagBtn}>
-                    <Text style={styles.removeTagBtnText}>×</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
-              {(!previewFile || !previewFile.tags || previewFile.tags.length === 0) && (
-                <Text style={styles.noTagsTextModal}>No tags added yet.</Text>
-              )}
-            </View>
-
-            {/* Input to add tag */}
-            <View style={styles.tagInputRow}>
-              <TextInput
-                style={styles.tagTextInput}
-                placeholder="Add tag (e.g. work)"
-                placeholderTextColor="#cbd5e1"
-                value={tagInput}
-                onChangeText={setTagInput}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity 
-                style={styles.addTagSubmitBtn}
-                onPress={() => {
-                  if (tagInput.trim()) {
-                    addTagToFile(tagInput.trim());
-                    setTagInput('');
-                  }
-                }}
-              >
-                <Text style={styles.addTagSubmitText}>+</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity 
-              style={[styles.confirmBtn, { backgroundColor: '#0f172a', marginTop: 12 }]} 
-              onPress={() => setShowTagModal(false)}
-            >
-              <Text style={styles.confirmBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1050,804 +567,134 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
+  container: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 20,
-    paddingBottom: 15,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0f172a',
-    textTransform: 'uppercase',
-  },
-  subtitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    marginTop: 2,
-    letterSpacing: 1,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  selectBtn: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  selectBtnActive: {
-    backgroundColor: '#0f172a',
-  },
-  selectBtnText: {
-    fontSize: 10,
-    fontWeight: '900',
-    color: '#64748b',
-    textTransform: 'uppercase',
-  },
-  selectBtnTextActive: {
-    color: '#fff',
-  },
-  uploadArea: {
-    margin: 20,
-    marginTop: 0,
-    height: 100,
-    borderWidth: 2,
-    borderColor: '#e2e8f0',
-    borderStyle: 'dashed',
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  uploadIconBox: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-  },
-  uploadText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  progressContainer: {
-    alignItems: 'center',
-    width: '100%',
-    paddingHorizontal: 40,
-  },
-  progressText: {
-    fontSize: 12,
-    fontWeight: '900',
-    color: '#3b82f6',
-    marginTop: 8,
-  },
-  progressBarBg: {
-    width: '100%',
-    height: 4,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 2,
-    marginTop: 10,
-    overflow: 'hidden',
-  },
-  progressBarFill: {
-    height: '100%',
-    backgroundColor: '#3b82f6',
-  },
-  searchSortRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 15,
-    gap: 10,
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#1e293b',
-  },
-  sortBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    gap: 6,
-  },
-  sortBtnText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    textTransform: 'uppercase',
-  },
-  sortList: {
-    marginBottom: 10,
-  },
-  sortOption: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 4,
-  },
-  sortOptionActive: {
-    backgroundColor: '#eff6ff',
-  },
-  sortOptionText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  sortOptionTextActive: {
-    color: '#2563eb',
-    fontWeight: '700',
-  },
-  listContent: {
-    padding: 20,
-    paddingTop: 0,
-  },
-  fileItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
-    borderRadius: 16,
-    marginBottom: 8,
-  },
-  fileItemSelected: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
-  },
-  checkbox: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: '#cbd5e1',
-    marginRight: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkboxActive: {
-    borderColor: '#2563eb',
-    backgroundColor: '#2563eb',
-  },
-  checkboxInner: {
-    width: 6,
-    height: 6,
-    backgroundColor: '#fff',
-    borderRadius: 1,
-  },
-  fileIconContainer: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#f8fafc',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  fileInfo: {
-    flex: 1,
-  },
-  fileName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  fileMeta: {
-    fontSize: 10,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
-  actionBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loadingBox: {
-    padding: 40,
-    alignItems: 'center',
-  },
-  emptyBox: {
-    padding: 60,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748b',
-    marginTop: 16,
-    textTransform: 'uppercase',
-  },
-  emptySubtitle: {
-    fontSize: 11,
-    color: '#94a3b8',
-    marginTop: 4,
-  },
-  bulkBar: {
-    position: 'absolute',
-    bottom: 20,
-    left: 20,
-    right: 20,
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    elevation: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-  },
-  bulkCount: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 1,
-  },
-  bulkActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  moveBtn: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  moveBtnText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  deleteBulkBtn: {
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  previewContainer: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  previewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
-  },
-  previewHeaderInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  previewHeaderText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  previewFileName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  previewFileSize: {
-    fontSize: 10,
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  previewBody: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  previewImage: {
-    width: '100%',
-    height: '100%',
-  },
-  noPreview: {
-    alignItems: 'center',
-    padding: 40,
-  },
-  noPreviewText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748b',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  openBtn: {
-    marginTop: 24,
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  openBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  previewFooter: {
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-  },
-  shareBtn: {
-    backgroundColor: '#0f172a',
-    height: 54,
-    borderRadius: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  shareBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    width: '100%',
-    maxWidth: 320,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '900',
-    color: '#0f172a',
-    textTransform: 'uppercase',
-    marginBottom: 20,
-  },
-  input: {
-    width: '100%',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14,
-    borderRadius: 12,
-    fontSize: 14,
-    color: '#1e293b',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  confirmBtn: {
-    backgroundColor: '#2563eb',
-    width: '100%',
-    height: 50,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  confirmBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  cancelLink: {
-    marginTop: 16,
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-  },
-  bottomSheetOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.4)',
-    justifyContent: 'flex-end',
-  },
-  bottomSheet: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: 20,
-    maxHeight: '60%',
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginBottom: 20,
-  },
-  bottomSheetTitle: {
-    fontSize: 14,
-    fontWeight: '900',
-    color: '#0f172a',
-    textTransform: 'uppercase',
-    marginBottom: 16,
-  },
-  folderList: {
-    marginBottom: 10,
-  },
-  folderItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 12,
-  },
-  folderIconSmall: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  folderItemName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  sheetCancelBtn: {
-    marginTop: 8,
-    height: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetCancelText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-  },
-  cancelBtn: {
-    padding: 4,
-  },
-  textPreviewScroll: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: '#0f172a',
-  },
-  textPreviewContainer: {
-    padding: 20,
-  },
-  textPreviewContent: {
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-    fontSize: 12,
-    color: '#38bdf8',
-    lineHeight: 18,
-  },
-  loadingText: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  actionRow: {
-    flexDirection: 'row',
-    marginHorizontal: 20,
-    marginBottom: 20,
-  },
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+  },
+  title: { fontSize: 14, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.5 },
+  headerActions: { flexDirection: 'row', gap: 8 },
   actionCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 16,
-    padding: 12,
-    height: 70,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#dbeafe',
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10,
   },
-  actionIconBox: {
-    width: 36,
-    height: 36,
-    backgroundColor: '#eff6ff',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
+  actionCardText: { fontSize: 11, fontWeight: '800', color: '#2563eb' },
+
+  tabsScroll: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  tabsContent: { paddingHorizontal: 14, paddingVertical: 8, gap: 6 },
+  tab: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff',
+    height: 30,
   },
-  actionTextContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  tabText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
+  tabCount: {
+    minWidth: 16, height: 16, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4,
   },
-  actionCardTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0f172a',
+  tabCountText: { fontSize: 9, fontWeight: '900' },
+
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 16, paddingVertical: 12,
   },
-  actionCardSub: {
-    fontSize: 9,
-    color: '#94a3b8',
-    marginTop: 1,
+  searchBox: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
+    borderRadius: 12, paddingHorizontal: 12, height: 42,
   },
-  editToggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: '#eff6ff',
+  searchInput: { flex: 1, fontSize: 13, color: '#1e293b', fontWeight: '500' },
+  sortBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
+    borderRadius: 12, paddingHorizontal: 12, height: 42,
   },
-  editToggleBtnActive: {
-    backgroundColor: '#ef4444',
+  sortBtnText: { fontSize: 10, fontWeight: '800', color: '#64748b' },
+
+  selectBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    marginHorizontal: 16, marginBottom: 8, backgroundColor: '#0f172a',
+    borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10,
   },
-  editToggleBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#2563eb',
+  selectCount: { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  selectAction: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
-  editToggleBtnTextActive: {
-    color: '#fff',
+  selectActionText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+
+  listContent: { padding: 16, paddingTop: 4 },
+  fileItem: {
+    flexDirection: 'row', alignItems: 'center', padding: 10,
+    backgroundColor: '#fff', borderRadius: 12, marginBottom: 6,
+    borderWidth: 1, borderColor: '#f1f5f9',
+    boxShadow: '0px 1px 4px rgba(0,0,0,0.04)',
+    elevation: 1,
   },
-  textEditorInput: {
-    flex: 1,
-    width: '100%',
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
-    padding: 16,
-    fontSize: 13,
-    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  fileItemSelected: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
+  checkbox: {
+    width: 18, height: 18, borderRadius: 5, borderWidth: 2,
+    borderColor: '#cbd5e1', marginRight: 10, alignItems: 'center', justifyContent: 'center',
   },
-  previewMetaSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    backgroundColor: '#fff',
+  checkboxActive: { borderColor: '#2563eb', backgroundColor: '#2563eb' },
+  checkboxInner: { width: 7, height: 7, backgroundColor: '#fff', borderRadius: 1.5 },
+  fileIconWrap: {
+    width: 34, height: 34, borderRadius: 9,
+    backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center', marginRight: 10,
   },
-  tagsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+  fileInfo: { flex: 1 },
+  fileName: { fontSize: 12, fontWeight: '700', color: '#1e293b' },
+  fileMeta: { fontSize: 9, color: '#94a3b8', marginTop: 1 },
+  actionBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+
+  emptyBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+  emptyTitle: { fontSize: 14, fontWeight: '700', color: '#64748b', marginTop: 16, textTransform: 'uppercase' },
+  emptySub: { fontSize: 11, color: '#94a3b8', marginTop: 4 },
+
+  previewContainer: { flex: 1, backgroundColor: '#fff' },
+  previewHeader: {
+    flexDirection: 'row', alignItems: 'center', padding: 16,
+    borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
   },
-  previewMetaLabel: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#64748b',
-    letterSpacing: 1,
+  previewName: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+  previewSize: { fontSize: 10, color: '#3b82f6', fontWeight: '600' },
+  previewBody: { flex: 1, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center' },
+  textScroll: { flex: 1, width: '100%', backgroundColor: '#0f172a' },
+  textContent: { padding: 20, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', fontSize: 12, color: '#38bdf8', lineHeight: 20 },
+  noPreview: { alignItems: 'center', padding: 40 },
+  noPreviewText: { fontSize: 13, color: '#64748b', marginTop: 16, textAlign: 'center' },
+  openBtn: { marginTop: 20, backgroundColor: '#2563eb', paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
+  openBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  previewFooter: { padding: 20, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
+  shareBtn: {
+    backgroundColor: '#0f172a', height: 54, borderRadius: 16,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
   },
-  manageTagsBtn: {
-    padding: 4,
+  shareBtnText: { color: '#fff', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.4)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20, maxHeight: '60%' },
+  handle: { width: 40, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', alignSelf: 'center', marginBottom: 20 },
+  sheetTitle: { fontSize: 14, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', marginBottom: 16 },
+  sheetOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: 4, borderRadius: 12 },
+  sheetOptionActive: { backgroundColor: '#eff6ff' },
+  sheetOptionText: { fontSize: 14, fontWeight: '600', color: '#475569' },
+  sheetCancel: { height: 50, alignItems: 'center', justifyContent: 'center' },
+  sheetCancelText: { fontSize: 11, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase' },
+
+  overlayCenter: { flex: 1, backgroundColor: 'rgba(15,23,42,0.4)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  dialog: { backgroundColor: '#fff', width: '100%', maxWidth: 340, borderRadius: 24, padding: 24, alignItems: 'center' },
+  dialogTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', marginBottom: 20 },
+  dialogInput: {
+    width: '100%', backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    borderRadius: 12, padding: 14, fontSize: 14, color: '#1e293b',
   },
-  manageTagsBtnText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#2563eb',
-    textTransform: 'uppercase',
-  },
-  previewTagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  previewTagBadge: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  previewTagBadgeText: {
-    fontSize: 11,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  noTagsText: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontStyle: 'italic',
-  },
-  editorActionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  saveEditBtn: {
-    flex: 2,
-    backgroundColor: '#2563eb',
-    height: 54,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveEditBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  cancelEditBtn: {
-    flex: 1,
-    backgroundColor: '#f1f5f9',
-    height: 54,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cancelEditBtnText: {
-    color: '#64748b',
-    fontSize: 12,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  tagFilterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    marginBottom: 16,
-  },
-  tagFilterLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#64748b',
-    textTransform: 'uppercase',
-    marginRight: 10,
-  },
-  tagFilterScroll: {
-    alignItems: 'center',
-    gap: 6,
-  },
-  tagFilterBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  tagFilterBadgeActive: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
-  },
-  tagFilterBadgeText: {
-    fontSize: 11,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  tagFilterBadgeTextActive: {
-    color: '#2563eb',
-    fontWeight: '700',
-  },
-  noteContentInput: {
-    width: '100%',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 14,
-    borderRadius: 12,
-    fontSize: 13,
-    color: '#1e293b',
-    minHeight: 150,
-  },
-  modalTagsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    width: '100%',
-    marginBottom: 16,
-    justifyContent: 'center',
-  },
-  modalTagBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
-    paddingLeft: 8,
-    paddingRight: 4,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  modalTagBadgeText: {
-    fontSize: 11,
-    color: '#2563eb',
-    fontWeight: '600',
-  },
-  removeTagBtn: {
-    marginLeft: 6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#dbeafe',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeTagBtnText: {
-    fontSize: 10,
-    color: '#2563eb',
-    fontWeight: '700',
-    lineHeight: 12,
-  },
-  noTagsTextModal: {
-    fontSize: 12,
-    color: '#94a3b8',
-    fontStyle: 'italic',
-  },
-  tagInputRow: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 8,
-    marginBottom: 12,
-  },
-  tagTextInput: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: 10,
-    fontSize: 13,
-    color: '#1e293b',
-  },
-  addTagSubmitBtn: {
-    width: 44,
-    height: 44,
-    backgroundColor: '#2563eb',
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addTagSubmitText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: '600',
-  },
+  dialogBtn: { backgroundColor: '#2563eb', width: '100%', height: 50, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 16 },
+  dialogBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase' },
+  dialogCancel: { marginTop: 14, fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase' },
 });
