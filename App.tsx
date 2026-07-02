@@ -85,7 +85,7 @@ export default function App() {
         <StatusBar style="dark" />
 
         {/* ── Header (no subtitle) ──────────────────────────────── */}
-        <View style={styles.header}>
+        <BlurView intensity={80} tint="light" style={styles.header}>
           <TouchableOpacity onPress={() => setCurrentPage('files')} style={styles.logoRow} activeOpacity={0.8}>
             <Logo size={36} />
             <Text style={styles.appName}>LIBRE</Text>
@@ -98,7 +98,7 @@ export default function App() {
               </Text>
             </View>
           )}
-        </View>
+        </BlurView>
 
         {/* ── Page content ─────────────────────────────────────── */}
         <View style={styles.main}>{renderPage()}</View>
@@ -182,8 +182,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: RNStatusBar.currentHeight ? RNStatusBar.currentHeight + 8 : 16,
     paddingBottom: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
   logoRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   appName:  { fontSize: 17, fontWeight: '900', color: '#0f172a', letterSpacing: 1 },
