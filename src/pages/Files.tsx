@@ -385,7 +385,7 @@ const vStyles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? 44 : 54,
     paddingBottom: 12,
     backgroundColor: '#fff',
-    borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6, elevation: 2,
   },
   backBtn: { width: 36, height: 36, borderRadius: 11, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
   headerMeta: { flex: 1 },
@@ -499,23 +499,73 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     finally { setUploading(false); }
   };
 
-  const toggleStar  = async (file: LibreFile) => { await db.files.update(file.id!, { starred: !(file as any).starred } as any); fetchFiles(); };
-  const deleteFile  = (id: number) => Alert.alert('Delete', 'Permanently delete this file?', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Delete', style: 'destructive', onPress: async () => { await db.files.delete(id); fetchFiles(); } },
-  ]);
+  const toggleStar = async (file: LibreFile) => {
+    await db.files.update(file.id!, { starred: !(file as any).starred } as any);
+    fetchFiles();
+  };
+
+  const deleteFile = (file: LibreFile) => {
+    Alert.alert(
+      'Delete File',
+      `Permanently delete "${file.name}"? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete physical file from device storage
+              if (Platform.OS !== 'web' && file.data && !file.data.startsWith('data:') && !file.data.startsWith('http')) {
+                const info = await FileSystem.getInfoAsync(file.data);
+                if (info.exists) await FileSystem.deleteAsync(file.data, { idempotent: true });
+              }
+              await db.files.delete(file.id!);
+              fetchFiles();
+            } catch (e) {
+              // Still remove from DB even if physical delete fails
+              await db.files.delete(file.id!);
+              fetchFiles();
+            }
+          },
+        },
+      ]
+    );
+  };
   const renameFile  = async () => {
     if (!newFileName.trim() || !editingFile?.id) return;
     await db.files.update(editingFile.id, { name: newFileName.trim() });
     setShowRenameModal(false); setEditingFile(null); setNewFileName(''); fetchFiles();
   };
-  const deleteSelected = () => Alert.alert('Delete', `Delete ${selectedIds.size} file(s)?`, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Delete', style: 'destructive', onPress: async () => {
-      await Promise.all(Array.from(selectedIds).map(id => db.files.delete(id as number)));
-      setIsSelectMode(false); setSelectedIds(new Set()); fetchFiles();
-    }},
-  ]);
+  const deleteSelected = () => {
+    const count = selectedIds.size;
+    Alert.alert(
+      'Delete Files',
+      `Permanently delete ${count} file${count > 1 ? 's' : ''}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Delete ${count}`, style: 'destructive',
+          onPress: async () => {
+            const toDelete = files.filter(f => selectedIds.has(f.id!));
+            await Promise.all(toDelete.map(async (file) => {
+              try {
+                if (Platform.OS !== 'web' && file.data && !file.data.startsWith('data:') && !file.data.startsWith('http')) {
+                  const info = await FileSystem.getInfoAsync(file.data);
+                  if (info.exists) await FileSystem.deleteAsync(file.data, { idempotent: true });
+                }
+                await db.files.delete(file.id!);
+              } catch {
+                await db.files.delete(file.id!);
+              }
+            }));
+            setIsSelectMode(false);
+            setSelectedIds(new Set());
+            fetchFiles();
+          },
+        },
+      ]
+    );
+  };
   const moveSelected = async (folderId: number | null) => {
     await Promise.all(Array.from(selectedIds).map(id => db.files.update(id as number, { folderId: folderId ?? undefined })));
     setShowMoveModal(false); setIsSelectMode(false); setSelectedIds(new Set()); fetchFiles();
@@ -544,12 +594,21 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     finally { setSavingNote(false); }
   };
 
-  const renderFile = ({ item }: { item: LibreFile }) => {
+  const renderFile = ({ item, index }: { item: LibreFile; index: number }) => {
     const isSelected = selectedIds.has(item.id!);
     const starred    = !!(item as any).starred;
     const ic         = getIconColor(item.type, item.name);
     const hasPreview = getPreviewType(item) !== 'none';
+    const fadeAnim   = useRef(new Animated.Value(0)).current;
+    const slideAnim  = useRef(new Animated.Value(16)).current;
+    React.useEffect(() => {
+      Animated.parallel([
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 300, delay: index * 40, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, delay: index * 40, useNativeDriver: true }),
+      ]).start();
+    }, []);
     return (
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <TouchableOpacity
         style={[styles.fileItem, isSelected && styles.fileItemSelected]}
         onPress={() => isSelectMode
@@ -582,10 +641,11 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         <TouchableOpacity onPress={() => { setEditingFile(item); setNewFileName(item.name); setShowRenameModal(true); }} style={styles.actionBtn}>
           <Edit2 size={13} color="#94a3b8" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => deleteFile(item.id!)} style={styles.actionBtn}>
+        <TouchableOpacity onPress={() => deleteFile(item)} style={styles.actionBtn}>
           <Trash2 size={13} color="#94a3b8" />
         </TouchableOpacity>
       </TouchableOpacity>
+      </Animated.View>
     );
   };
 
@@ -849,63 +909,63 @@ const styles = StyleSheet.create({
   // ── Top block ──
   topBlock: {
     backgroundColor: '#fff',
-    shadowColor: '#000',
+    shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowRadius: 10,
+    elevation: 4,
   },
-  divider: { height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 0 },
+  divider: { height: 8, backgroundColor: '#f8fafc' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
+    paddingHorizontal: 18, paddingTop: 18, paddingBottom: 14,
   },
   title:          { fontSize: 14, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.8 },
   headerActions:  { flexDirection: 'row', gap: 8 },
   actionCard: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#dbeafe',
+    backgroundColor: '#eff6ff',
     paddingHorizontal: 11, paddingVertical: 7, borderRadius: 10,
   },
   actionCardText: { fontSize: 11, fontWeight: '800', color: '#2563eb' },
 
   // ── Chips ──
-  tabsScroll:   { height: 44 },
-  tabsContent:  { paddingHorizontal: 14, paddingVertical: 7, gap: 7, alignItems: 'center' },
+  tabsScroll:   { height: 52 },
+  tabsContent:  { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   tab: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
-    borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff',
-    height: 28,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+    height: 32,
   },
-  tabText:      { fontSize: 10, fontWeight: '700', color: '#64748b' },
+  tabText:      { fontSize: 11, fontWeight: '700', color: '#64748b' },
   tabCount:     { minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tabCountText: { fontSize: 8, fontWeight: '900' },
 
   // ── Search ──
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingTop: 8, paddingBottom: 10,
+    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 14,
   },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7,
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
-    borderRadius: 12, paddingHorizontal: 11, height: 38,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12, paddingHorizontal: 12, height: 42,
   },
   searchInput: { flex: 1, fontSize: 13, color: '#1e293b', fontWeight: '500' },
   sortBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
-    borderRadius: 12, paddingHorizontal: 11, height: 38,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12, paddingHorizontal: 12, height: 42,
   },
   sortBtnText: { fontSize: 10, fontWeight: '800', color: '#64748b' },
 
   // ── Select bar ──
   selectBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    margin: 12, marginBottom: 0, backgroundColor: '#0f172a',
-    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    marginHorizontal: 16, marginTop: 12, marginBottom: 0, backgroundColor: '#0f172a',
+    borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
   },
   selectCount:      { fontSize: 11, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   selectAction: {
@@ -916,23 +976,22 @@ const styles = StyleSheet.create({
   selectActionText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
   // ── File list ──
-  listContent: { padding: 12, paddingTop: 10, gap: 8 },
+  listContent: { padding: 16, paddingTop: 14, gap: 10 },
   fileItem: {
     flexDirection: 'row', alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#fff', borderRadius: 14,
-    borderWidth: 1, borderColor: '#f1f5f9',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03, shadowRadius: 4, elevation: 1,
+    padding: 14,
+    backgroundColor: '#fff', borderRadius: 16,
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
   },
-  fileItemSelected: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
+  fileItemSelected: { backgroundColor: '#eff6ff' },
   checkbox:       { width: 18, height: 18, borderRadius: 5, borderWidth: 2, borderColor: '#cbd5e1', marginRight: 10, alignItems: 'center', justifyContent: 'center' },
   checkboxActive: { borderColor: '#2563eb', backgroundColor: '#2563eb' },
   checkboxInner:  { width: 7, height: 7, backgroundColor: '#fff', borderRadius: 1.5 },
-  fileIconWrap:   { width: 38, height: 38, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  fileIconWrap:   { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
   fileInfo:       { flex: 1 },
-  fileName:       { fontSize: 13, fontWeight: '700', color: '#1e293b' },
-  fileMeta:       { fontSize: 10, color: '#94a3b8', marginTop: 2 },
+  fileName:       { fontSize: 13, fontWeight: '700', color: '#1e293b', marginBottom: 1 },
+  fileMeta:       { fontSize: 10, color: '#94a3b8', marginTop: 3 },
   previewBadge:   { width: 22, height: 22, borderRadius: 7, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginRight: 2 },
   actionBtn:      { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
 
