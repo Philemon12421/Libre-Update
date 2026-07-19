@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import {
   FileText, Folder as FolderIcon, Search,
-  Settings as SettingsIcon, BookOpen, Plus, X, Wrench,
+  Settings as SettingsIcon, BookOpen, Plus, X, Wrench, Sparkles,
 } from 'lucide-react-native';
 
 import FilesPage    from './src/pages/Files';
@@ -18,11 +18,12 @@ import BookSearch   from './src/pages/BookSearch';
 import SettingsPage from './src/pages/Settings';
 import AboutPage    from './src/pages/About';
 import ToolsPage    from './src/pages/Tools';
+import AIChatPage   from './src/pages/AIChat';
 import Logo         from './src/components/Logo';
 import SplashScreen     from './src/SplashScreen';
 import OnboardingScreen from './src/OnboardingScreen';
 
-type Page = 'files' | 'folders' | 'search' | 'settings' | 'about' | 'tools';
+type Page = 'files' | 'folders' | 'search' | 'settings' | 'about' | 'tools' | 'ai';
 type AppState = 'splash' | 'onboarding' | 'app' | null;
 
 const MAIN_NAV: { id: Page; label: string; icon: any }[] = [
@@ -33,6 +34,7 @@ const MAIN_NAV: { id: Page; label: string; icon: any }[] = [
 ];
 
 const MORE_NAV: { id: Page; label: string; icon: any; desc: string }[] = [
+  { id: 'ai',    label: 'Libre AI',    icon: Sparkles, desc: 'Books, research & knowledge chat'   },
   { id: 'tools', label: 'PDF Tools',   icon: Wrench,   desc: 'Convert, merge, split, sign & more' },
   { id: 'about', label: 'About Libre', icon: BookOpen, desc: 'Version & app info'                 },
 ];
@@ -71,6 +73,7 @@ export default function App() {
       case 'search':   return <BookSearch />;
       case 'settings': return <SettingsPage />;
       case 'tools':    return <ToolsPage />;
+      case 'ai':       return <AIChatPage />;
       case 'about':    return <AboutPage />;
       default:         return <FilesPage />;
     }

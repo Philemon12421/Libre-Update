@@ -102,78 +102,82 @@ function formatSize(bytes: number) {
 // ── HTML builders ──────────────────────────────────────────────────────────
 
 function buildPdfHtml(uri: string): string {
+  // Use Google Docs viewer for all PDFs — most reliable cross-platform approach
+  const isHttp = uri.startsWith('http');
+  if (isHttp) {
+    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(uri)}&embedded=true`;
+    return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{margin:0;padding:0}body{background:#1a1a2e}iframe{width:100vw;height:100vh;border:none}</style>
+</head><body>
+<iframe src="${viewerUrl}" allowfullscreen></iframe>
+</body></html>`;
+  }
+  // Local PDF — use pdf.js from CDN with the file URI
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=3">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#1a1a2e;font-family:sans-serif;display:flex;flex-direction:column;min-height:100vh}
-#toolbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;position:sticky;top:0;z-index:10;gap:8px;border-bottom:1px solid #1e293b}
-.page-info{color:#94a3b8;font-size:12px;text-align:center;flex:1}
-.page-info span{color:#60a5fa;font-weight:700}
-.btn{background:#1e293b;border:1px solid #334155;color:#e2e8f0;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;transition:background 0.15s}
-.btn:active{background:#334155}
-.zoom-btns{display:flex;gap:4px}
-#canvas-wrap{display:flex;flex-direction:column;align-items:center;padding:16px 12px;gap:16px}
-canvas{border-radius:6px;box-shadow:0 4px 24px rgba(0,0,0,0.5);max-width:100%;background:#fff}
-#loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;color:#60a5fa;gap:12px;font-size:14px}
-.spinner{width:36px;height:36px;border:3px solid #1e293b;border-top-color:#60a5fa;border-radius:50%;animation:spin 0.8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-#error{padding:32px;text-align:center;color:#f87171;font-size:13px;line-height:1.6}
+body{background:#1e1e2e;font-family:sans-serif}
+#toolbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f172a;position:sticky;top:0;z-index:10}
+.info{color:#94a3b8;font-size:12px;text-align:center;flex:1}
+.info span{color:#60a5fa;font-weight:700}
+.btn{background:#1e293b;border:none;color:#e2e8f0;border-radius:8px;padding:7px 13px;font-size:12px;cursor:pointer}
+#wrap{display:flex;flex-direction:column;align-items:center;padding:12px;gap:12px;min-height:100vh}
+canvas{border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);max-width:100%;background:#fff}
+#load{display:flex;flex-direction:column;align-items:center;justify-content:center;height:80vh;color:#60a5fa;gap:14px;font-size:13px}
+.spin{width:34px;height:34px;border:3px solid #1e293b;border-top-color:#60a5fa;border-radius:50%;animation:s 0.9s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+#err{padding:30px;text-align:center;color:#f87171;font-size:12px;line-height:1.7;display:none}
 </style></head><body>
 <div id="toolbar">
-  <button class="btn" onclick="changePage(-1)">‹ Prev</button>
-  <div class="page-info">Page <span id="pn">—</span> / <span id="pc">—</span></div>
-  <button class="btn" onclick="changePage(1)">Next ›</button>
-  <div class="zoom-btns">
-    <button class="btn" onclick="zoom(0.25)">＋</button>
-    <button class="btn" onclick="zoom(-0.25)">－</button>
-  </div>
+  <button class="btn" onclick="go(-1)">‹</button>
+  <div class="info">Page <span id="pn">–</span> / <span id="pc">–</span></div>
+  <button class="btn" onclick="go(1)">›</button>
+  <button class="btn" onclick="zoomIn()">＋</button>
+  <button class="btn" onclick="zoomOut()">－</button>
 </div>
-<div id="loading"><div class="spinner"></div>Loading PDF…</div>
-<div id="canvas-wrap" style="display:none"></div>
-<div id="error" style="display:none"></div>
+<div id="load"><div class="spin"></div>Loading PDF…</div>
+<div id="wrap" style="display:none"></div>
+<div id="err"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-let pdf=null,page=1,scale=1.3,rendering=false;
-const wrap=document.getElementById('canvas-wrap');
-const loading=document.getElementById('loading');
-const err=document.getElementById('error');
+var workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+pdfjsLib.GlobalWorkerOptions.workerSrc=workerSrc;
+var pdf=null,page=1,scale=1.2,busy=false;
+var wrap=document.getElementById('wrap');
+var load=document.getElementById('load');
+var err=document.getElementById('err');
 
-async function renderPage(n){
-  if(rendering)return;rendering=true;
-  const p=await pdf.getPage(n);
-  const vp=p.getViewport({scale});
-  let canvas=document.getElementById('c'+n);
-  if(!canvas){canvas=document.createElement('canvas');canvas.id='c'+n;wrap.appendChild(canvas);}
-  canvas.width=vp.width;canvas.height=vp.height;
-  await p.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
-  document.getElementById('pn').textContent=n;
-  rendering=false;
-}
+function showErr(msg){load.style.display='none';wrap.style.display='none';err.style.display='block';err.textContent=msg;}
 
-pdfjsLib.getDocument('${uri}').promise.then(doc=>{
+pdfjsLib.getDocument({url:'${uri}',disableStream:true,disableRange:true}).promise.then(function(doc){
   pdf=doc;
   document.getElementById('pc').textContent=doc.numPages;
-  loading.style.display='none';
+  load.style.display='none';
   wrap.style.display='flex';
-  renderPage(page);
-}).catch(e=>{
-  loading.style.display='none';
-  err.style.display='block';
-  err.textContent='Cannot load PDF: '+e.message;
-});
+  render(1);
+}).catch(function(e){showErr('Cannot load PDF.\n'+e.message+'\n\nTry sharing the file and opening in a PDF viewer app.');});
 
-function changePage(d){
-  if(!pdf)return;
-  const next=page+d;
-  if(next<1||next>pdf.numPages)return;
-  page=next;renderPage(page);
-  wrap.scrollTo({top:0,behavior:'smooth'});
+function render(n){
+  if(busy||!pdf)return;busy=true;page=n;
+  pdf.getPage(n).then(function(p){
+    var vp=p.getViewport({scale:scale});
+    var id='c'+n;
+    var c=document.getElementById(id);
+    if(!c){c=document.createElement('canvas');c.id=id;wrap.innerHTML='';wrap.appendChild(c);}
+    c.width=vp.width;c.height=vp.height;
+    p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
+      document.getElementById('pn').textContent=n;busy=false;
+    });
+  });
 }
-function zoom(d){scale=Math.min(Math.max(scale+d,0.5),3.5);renderPage(page);}
+function go(d){var n=page+d;if(pdf&&n>=1&&n<=pdf.numPages)render(n);}
+function zoomIn(){scale=Math.min(scale+0.25,3.5);render(page);}
+function zoomOut(){scale=Math.max(scale-0.25,0.5);render(page);}
 </script></body></html>`;
 }
+
 
 function buildOfficeViewerHtml(uri: string): string {
   const src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(uri)}`;
@@ -187,28 +191,38 @@ iframe{width:100vw;height:100vh;border:none;display:block}</style>
 }
 
 function buildTextHtml(text: string, name: string): string {
-  const ext   = name.split('.').pop()?.toLowerCase() ?? '';
-  const isCode= ['js','ts','jsx','tsx','html','css','json','xml','yaml','yml','md'].includes(ext);
-  const isMd  = ext === 'md';
-  const esc   = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  if (isCode && !isMd) return `<!DOCTYPE html><html><head>
+  const ext    = name.split('.').pop()?.toLowerCase() ?? '';
+  const isCode = ['js','ts','jsx','tsx','html','css','json','xml','yaml','yml','py','java','cpp','c','sh','md'].includes(ext);
+  const esc    = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  if (isCode) {
+    const lines = esc.split('\n').map((line, i) =>
+      `<tr><td class="ln">${i + 1}</td><td class="code">${line || ' '}</td></tr>`
+    ).join('');
+    return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{margin:0;padding:0;box-sizing:border-box}
-body{background:#0f172a;padding:0}
-pre{padding:20px;font-family:'Courier New',monospace;font-size:12px;
-    line-height:1.7;color:#38bdf8;white-space:pre-wrap;word-break:break-all;
-    tab-size:2;overflow-x:auto}
-.line-num{color:#334155;user-select:none;margin-right:16px;min-width:28px;display:inline-block;text-align:right}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:12px}
+table{width:100%;border-collapse:collapse;padding:12px 0}
+.ln{color:#334155;text-align:right;padding:3px 12px 3px 8px;user-select:none;vertical-align:top;min-width:36px;font-size:11px}
+.code{padding:3px 12px 3px 0;white-space:pre-wrap;word-break:break-word;color:#38bdf8;line-height:1.6}
 </style></head><body>
-<pre>${esc.split('\n').map((l,i)=>`<span class="line-num">${i+1}</span>${l}`).join('\n')}</pre>
+<table><tbody>${lines}</tbody></table>
 </body></html>`;
+  }
+
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{margin:0;padding:0;box-sizing:border-box}
-body{background:#fff;padding:20px;font-family:-apple-system,sans-serif;font-size:14px;color:#1e293b;line-height:1.7}
-p{margin-bottom:12px}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;font-size:15px;line-height:1.8;padding:20px}
+p{margin-bottom:14px}
 </style></head><body>
-<div>${esc.replace(/\n/g,'<br/>')}</div>
+<div>${esc.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</div>
 </body></html>`;
 }
 
@@ -323,11 +337,6 @@ Answer the user's question based on this document.`
 
   return (
     <Animated.View style={[aiStyles.panel, { transform: [{ translateY }] }]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
-      >
       {/* Header */}
       <View style={aiStyles.header}>
         <View style={aiStyles.headerLeft}>
@@ -404,6 +413,7 @@ Answer the user's question based on this document.`
       </ScrollView>
 
       {/* Input */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
         <View style={aiStyles.inputRow}>
           <TextInput
             style={aiStyles.input}
@@ -432,10 +442,11 @@ Answer the user's question based on this document.`
 
 const aiStyles = StyleSheet.create({
   panel: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    height: '68%',
     backgroundColor: '#fff',
     zIndex: 200,
-    top: '35%',
     borderTopLeftRadius: 28, borderTopRightRadius: 28,
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.12, shadowRadius: 20, elevation: 20,
