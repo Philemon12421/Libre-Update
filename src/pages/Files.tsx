@@ -323,6 +323,11 @@ Answer the user's question based on this document.`
 
   return (
     <Animated.View style={[aiStyles.panel, { transform: [{ translateY }] }]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
       {/* Header */}
       <View style={aiStyles.header}>
         <View style={aiStyles.headerLeft}>
@@ -399,7 +404,6 @@ Answer the user's question based on this document.`
       </ScrollView>
 
       {/* Input */}
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View style={aiStyles.inputRow}>
           <TextInput
             style={aiStyles.input}
@@ -1208,7 +1212,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       {/* ── Rename modal ── */}
       <Modal visible={showRenameModal} transparent animationType="fade">
-        <KeyboardAvoidingView style={styles.overlayCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <KeyboardAvoidingView style={styles.overlayCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 44 : 0}>
           <View style={styles.dialog}>
             <Text style={styles.dialogTitle}>Rename File</Text>
             <TextInput
@@ -1258,7 +1262,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 44 : 0}
         >
           <View style={[styles.sheet, { maxHeight: '85%' }]}>
             <View style={styles.handle} />
