@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
   Modal, TextInput, ActivityIndicator, Alert, ScrollView,
-  Image, Platform, Animated, KeyboardAvoidingView,
+  Image, Platform, Animated, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
@@ -11,9 +11,10 @@ import {
   FileText, Image as ImageIcon, File, Download, Trash2,
   Upload, X, Edit2, Plus, Search, ArrowUpDown, BookOpen,
   FileCode, Layout, Star, Folder as FolderIcon, MoreHorizontal,
-  ExternalLink, ChevronLeft, ZoomIn,
+  ExternalLink, ChevronLeft, ZoomIn, Sparkles, Send, MessageCircle,
 } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, LibreFile, LibreFolder } from '../lib/db';
 import { format } from 'date-fns';
 
@@ -211,11 +212,291 @@ p{margin-bottom:12px}
 </body></html>`;
 }
 
+
+// ── AI Chat Panel ──────────────────────────────────────────────────────────
+interface ChatMsg { role: 'user' | 'assistant'; content: string; }
+
+function AIChatPanel({
+  file, textContent, onClose,
+}: {
+  file: LibreFile;
+  textContent: string;
+  onClose: () => void;
+}) {
+  const [messages,   setMessages]   = useState<ChatMsg[]>([]);
+  const [input,      setInput]      = useState('');
+  const [loading,    setLoading]    = useState(false);
+  const [apiKey,     setApiKey]     = useState('');
+  const [modelId,    setModelId]    = useState('llama-3.1-8b-instant');
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    Animated.spring(slideAnim, { toValue: 1, tension: 55, friction: 9, useNativeDriver: true }).start();
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const key   = await AsyncStorage.getItem('libre_groq_api_key');
+      const model = await AsyncStorage.getItem('libre_groq_model');
+      if (key)   setApiKey(key);
+      if (model) setModelId(model);
+    } catch {}
+  };
+
+  const translateY = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [600, 0] });
+
+  const handleClose = () => {
+    Animated.timing(slideAnim, { toValue: 0, duration: 220, useNativeDriver: true }).start(onClose);
+  };
+
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    if (!apiKey) {
+      Alert.alert('No API Key', 'Go to Settings → AI Integration to add your free Groq API key.');
+      return;
+    }
+
+    const userMsg: ChatMsg = { role: 'user', content: input.trim() };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
+    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+
+    // Build context from file
+    const docContext = textContent
+      ? `You are a helpful document assistant. The user is viewing a file called "${file.name}". Here is its content:
+
+${textContent.slice(0, 6000)}
+
+---
+Answer the user's question based on this document.`
+      : `You are a helpful assistant. The user is viewing a file called "${file.name}" (${file.type}). You cannot see its content directly, but help as best you can.`;
+
+    const history = messages.slice(-6).map(m => ({ role: m.role, content: m.content }));
+
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelId,
+          messages: [
+            { role: 'system', content: docContext },
+            ...history,
+            { role: 'user', content: userMsg.content },
+          ],
+          max_tokens: 1024,
+          temperature: 0.7,
+          stream: false,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.choices?.[0]?.message?.content) {
+        const reply: ChatMsg = { role: 'assistant', content: data.choices[0].message.content };
+        setMessages(prev => [...prev, reply]);
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
+      } else if (data.error) {
+        const errMsg: ChatMsg = { role: 'assistant', content: `❌ Error: ${data.error.message}` };
+        setMessages(prev => [...prev, errMsg]);
+      }
+    } catch (e: any) {
+      const errMsg: ChatMsg = { role: 'assistant', content: `❌ Network error: ${e.message}` };
+      setMessages(prev => [...prev, errMsg]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const QUICK = [
+    'Summarise this document',
+    'What are the key points?',
+    'Explain this simply',
+    'List all dates mentioned',
+  ];
+
+  return (
+    <Animated.View style={[aiStyles.panel, { transform: [{ translateY }] }]}>
+      {/* Header */}
+      <View style={aiStyles.header}>
+        <View style={aiStyles.headerLeft}>
+          <View style={aiStyles.sparkleWrap}>
+            <Sparkles size={16} color="#fff" />
+          </View>
+          <View>
+            <Text style={aiStyles.headerTitle}>Ask AI</Text>
+            <Text style={aiStyles.headerSub} numberOfLines={1}>{file.name}</Text>
+          </View>
+        </View>
+        <TouchableOpacity onPress={handleClose} style={aiStyles.closeBtn} activeOpacity={0.7}>
+          <X size={16} color="#64748b" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Messages */}
+      <ScrollView
+        ref={scrollRef}
+        style={aiStyles.messages}
+        contentContainerStyle={aiStyles.messagesContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {messages.length === 0 && (
+          <View style={aiStyles.emptyState}>
+            <View style={aiStyles.emptyIcon}>
+              <MessageCircle size={28} color="#7c3aed" />
+            </View>
+            <Text style={aiStyles.emptyTitle}>Ask about this document</Text>
+            <Text style={aiStyles.emptySub}>
+              {apiKey ? 'Type a question or tap a suggestion below' : 'Add your free Groq API key in Settings → AI Integration'}
+            </Text>
+            {/* Quick prompts */}
+            {apiKey && (
+              <View style={aiStyles.quickRow}>
+                {QUICK.map((q, i) => (
+                  <TouchableOpacity key={i} style={aiStyles.quickChip} onPress={() => { setInput(q); }} activeOpacity={0.8}>
+                    <Text style={aiStyles.quickChipText}>{q}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {messages.map((msg, i) => (
+          <View key={i} style={[aiStyles.bubble, msg.role === 'user' ? aiStyles.userBubble : aiStyles.aiBubble]}>
+            {msg.role === 'assistant' && (
+              <View style={aiStyles.aiAvatar}>
+                <Sparkles size={10} color="#7c3aed" />
+              </View>
+            )}
+            <View style={[aiStyles.bubbleContent, msg.role === 'user' ? aiStyles.userContent : aiStyles.aiContent]}>
+              <Text style={[aiStyles.bubbleText, msg.role === 'user' ? aiStyles.userText : aiStyles.aiText]}>
+                {msg.content}
+              </Text>
+            </View>
+          </View>
+        ))}
+
+        {loading && (
+          <View style={[aiStyles.bubble, aiStyles.aiBubble]}>
+            <View style={aiStyles.aiAvatar}><Sparkles size={10} color="#7c3aed" /></View>
+            <View style={[aiStyles.bubbleContent, aiStyles.aiContent, aiStyles.typingBubble]}>
+              <View style={aiStyles.typingDots}>
+                {[0, 1, 2].map(i => (
+                  <View key={i} style={[aiStyles.typingDot, { opacity: 0.4 + i * 0.2 }]} />
+                ))}
+              </View>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Input */}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        <View style={aiStyles.inputRow}>
+          <TextInput
+            style={aiStyles.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder="Ask anything about this document…"
+            placeholderTextColor="#cbd5e1"
+            multiline
+            maxLength={500}
+            returnKeyType="send"
+            onSubmitEditing={sendMessage}
+          />
+          <TouchableOpacity
+            style={[aiStyles.sendBtn, (!input.trim() || loading) && { opacity: 0.4 }]}
+            onPress={sendMessage}
+            disabled={!input.trim() || loading}
+            activeOpacity={0.85}
+          >
+            <Send size={16} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Animated.View>
+  );
+}
+
+const aiStyles = StyleSheet.create({
+  panel: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#fff',
+    zIndex: 200,
+    top: '35%',
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12, shadowRadius: 20, elevation: 20,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    padding: 18, paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#f1f5f9',
+  },
+  headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  sparkleWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#7c3aed', alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 14, fontWeight: '900', color: '#0f172a' },
+  headerSub:   { fontSize: 10, color: '#94a3b8', fontWeight: '500', marginTop: 1, maxWidth: 200 },
+  closeBtn:    { width: 32, height: 32, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+
+  messages:        { flex: 1 },
+  messagesContent: { padding: 16, gap: 12, paddingBottom: 8 },
+
+  emptyState:  { alignItems: 'center', paddingTop: 24, paddingHorizontal: 16, gap: 8 },
+  emptyIcon:   { width: 60, height: 60, borderRadius: 18, backgroundColor: '#faf5ff', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  emptyTitle:  { fontSize: 15, fontWeight: '800', color: '#1e293b' },
+  emptySub:    { fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 18 },
+  quickRow:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'center', marginTop: 12 },
+  quickChip:   { backgroundColor: '#faf5ff', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
+  quickChipText: { fontSize: 11, fontWeight: '700', color: '#7c3aed' },
+
+  bubble:      { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  userBubble:  { justifyContent: 'flex-end' },
+  aiBubble:    { justifyContent: 'flex-start' },
+  aiAvatar:    { width: 24, height: 24, borderRadius: 8, backgroundColor: '#faf5ff', alignItems: 'center', justifyContent: 'center', marginBottom: 2 },
+  bubbleContent: { maxWidth: '80%', borderRadius: 16, padding: 12 },
+  userContent: { backgroundColor: '#7c3aed', borderBottomRightRadius: 4 },
+  aiContent:   { backgroundColor: '#f8fafc', borderBottomLeftRadius: 4 },
+  bubbleText:  { fontSize: 13, lineHeight: 20 },
+  userText:    { color: '#fff' },
+  aiText:      { color: '#1e293b' },
+  typingBubble:{ paddingVertical: 14 },
+  typingDots:  { flexDirection: 'row', gap: 5, alignItems: 'center' },
+  typingDot:   { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#7c3aed' },
+
+  inputRow: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: 10,
+    padding: 14, paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f1f5f9',
+  },
+  input: {
+    flex: 1, backgroundColor: '#f8fafc', borderRadius: 16,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 13, color: '#1e293b', maxHeight: 100,
+    lineHeight: 20,
+  },
+  sendBtn: {
+    width: 42, height: 42, borderRadius: 14,
+    backgroundColor: '#7c3aed', alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#7c3aed', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3, shadowRadius: 6, elevation: 4,
+  },
+});
+
 // ── Document Viewer ────────────────────────────────────────────────────────
 function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => void }) {
   const [textContent, setTextContent] = useState('');
   const [webLoading,  setWebLoading]  = useState(true);
   const [imgLoaded,   setImgLoaded]   = useState(false);
+  const [showAI,      setShowAI]      = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const type  = getPreviewType(file);
   const ic    = getIconColor(file.type, file.name);
@@ -358,8 +639,12 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
           <Text style={vStyles.headerName} numberOfLines={1}>{file.name}</Text>
           <Text style={vStyles.headerSize}>{formatSize(file.size)} · {format(file.createdAt, 'MMM d, yyyy')}</Text>
         </View>
+        <TouchableOpacity onPress={() => setShowAI(true)} style={vStyles.aiBtn} activeOpacity={0.8}>
+          <Sparkles size={15} color="#7c3aed" />
+          <Text style={vStyles.aiBtnText}>Ask AI</Text>
+        </TouchableOpacity>
         <TouchableOpacity onPress={() => Sharing.shareAsync(file.data)} style={vStyles.shareBtn} activeOpacity={0.7}>
-          <Download size={18} color="#2563eb" />
+          <Download size={16} color="#2563eb" />
         </TouchableOpacity>
       </View>
 
@@ -372,7 +657,20 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
           <Download size={15} color="#fff" />
           <Text style={vStyles.footerBtnText}>Share / Export</Text>
         </TouchableOpacity>
+        <TouchableOpacity style={vStyles.aiFooterBtn} onPress={() => setShowAI(true)} activeOpacity={0.85}>
+          <Sparkles size={15} color="#7c3aed" />
+          <Text style={vStyles.aiFooterBtnText}>Ask AI</Text>
+        </TouchableOpacity>
       </View>
+
+      {/* AI Chat Panel */}
+      {showAI && (
+        <AIChatPanel
+          file={file}
+          textContent={textContent}
+          onClose={() => setShowAI(false)}
+        />
+      )}
     </Animated.View>
   );
 }
@@ -411,9 +709,131 @@ const vStyles = StyleSheet.create({
   loadingCard: { alignItems: 'center', gap: 12, backgroundColor: '#fff', padding: 28, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 16, elevation: 6 },
   loadingText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
 
-  footer: { padding: 14, borderTopWidth: 1, borderTopColor: '#f1f5f9', backgroundColor: '#fff' },
-  footerBtn: { backgroundColor: '#0f172a', height: 48, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
-  footerBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1.2 },
+  footer: { flexDirection: 'row', gap: 10, padding: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f1f5f9', backgroundColor: '#fff' },
+  footerBtn: { flex: 1, backgroundColor: '#0f172a', height: 48, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  footerBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  aiFooterBtn: { flex: 1, backgroundColor: '#faf5ff', height: 48, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  aiFooterBtnText: { color: '#7c3aed', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  aiBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#faf5ff', paddingHorizontal: 11, paddingVertical: 7, borderRadius: 10 },
+  aiBtnText: { fontSize: 11, fontWeight: '800', color: '#7c3aed' },
+});
+
+// ── FileItem Component (hooks-safe, outside FlatList render) ─────────────
+function FileItem({
+  item, index, isSelectMode, isSelected,
+  onPress, onLongPress, onStar, onRename, onDelete,
+}: {
+  item: LibreFile;
+  index: number;
+  isSelectMode: boolean;
+  isSelected: boolean;
+  onPress: () => void;
+  onLongPress: () => void;
+  onStar: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const ic         = getIconColor(item.type, item.name);
+  const hasPreview = getPreviewType(item) !== 'none';
+  const starred    = !!(item as any).starred;
+  const fadeAnim   = useRef(new Animated.Value(0)).current;
+  const slideAnim  = useRef(new Animated.Value(18)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 320, delay: index * 45, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 320, delay: index * 45, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+      <TouchableOpacity
+        style={[fiStyles.item, isSelected && fiStyles.itemSelected]}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        activeOpacity={0.72}
+      >
+        {isSelectMode && (
+          <View style={[fiStyles.checkbox, isSelected && fiStyles.checkboxActive]}>
+            {isSelected && <View style={fiStyles.checkMark} />}
+          </View>
+        )}
+
+        {/* Icon */}
+        <View style={[fiStyles.iconWrap, { backgroundColor: ic.bg }]}>
+          {getIcon(item.type, 20, item.name)}
+        </View>
+
+        {/* Info */}
+        <View style={fiStyles.info}>
+          <Text style={fiStyles.name} numberOfLines={1}>{item.name}</Text>
+          <View style={fiStyles.metaRow}>
+            <Text style={fiStyles.meta}>{formatSize(item.size)}</Text>
+            <View style={fiStyles.dot} />
+            <Text style={fiStyles.meta}>{format(item.createdAt, 'MMM d, yyyy')}</Text>
+          </View>
+        </View>
+
+        {/* Preview badge */}
+        {hasPreview && !isSelectMode && (
+          <View style={[fiStyles.previewBadge, { backgroundColor: ic.bg }]}>
+            <ZoomIn size={10} color={ic.color} />
+          </View>
+        )}
+
+        {/* Actions */}
+        {!isSelectMode && (
+          <View style={fiStyles.actions}>
+            <TouchableOpacity onPress={onStar} style={fiStyles.actionBtn} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Star size={13} color={starred ? '#f59e0b' : '#d1d5db'} fill={starred ? '#f59e0b' : 'none'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onRename} style={fiStyles.actionBtn} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Edit2 size={13} color="#cbd5e1" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onDelete} style={[fiStyles.actionBtn, fiStyles.deleteBtn]} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <Trash2 size={13} color="#fca5a5" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+const fiStyles = StyleSheet.create({
+  item: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16, padding: 14,
+    marginBottom: 0,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  itemSelected: { backgroundColor: '#eff6ff' },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 6,
+    borderWidth: 2, borderColor: '#cbd5e1',
+    marginRight: 12, alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxActive: { borderColor: '#2563eb', backgroundColor: '#2563eb' },
+  checkMark: { width: 8, height: 8, backgroundColor: '#fff', borderRadius: 2 },
+  iconWrap: {
+    width: 44, height: 44, borderRadius: 13,
+    alignItems: 'center', justifyContent: 'center', marginRight: 14,
+  },
+  info:    { flex: 1, gap: 4 },
+  name:    { fontSize: 13, fontWeight: '700', color: '#1e293b' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  meta:    { fontSize: 10, color: '#94a3b8', fontWeight: '500' },
+  dot:     { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#d1d5db' },
+  previewBadge: { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center', marginRight: 4 },
+  actions:   { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 4 },
+  actionBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
+  deleteBtn: { backgroundColor: '#fef2f2' },
 });
 
 // ── Main Page ──────────────────────────────────────────────────────────────
@@ -594,69 +1014,33 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
     finally { setSavingNote(false); }
   };
 
-  const renderFile = ({ item, index }: { item: LibreFile; index: number }) => {
-    const isSelected = selectedIds.has(item.id!);
-    const starred    = !!(item as any).starred;
-    const ic         = getIconColor(item.type, item.name);
-    const hasPreview = getPreviewType(item) !== 'none';
-    const fadeAnim   = useRef(new Animated.Value(0)).current;
-    const slideAnim  = useRef(new Animated.Value(16)).current;
-    React.useEffect(() => {
-      Animated.parallel([
-        Animated.timing(fadeAnim,  { toValue: 1, duration: 300, delay: index * 40, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 0, duration: 300, delay: index * 40, useNativeDriver: true }),
-      ]).start();
-    }, []);
-    return (
-      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-      <TouchableOpacity
-        style={[styles.fileItem, isSelected && styles.fileItemSelected]}
-        onPress={() => isSelectMode
-          ? setSelectedIds(prev => { const s = new Set(prev); s.has(item.id!) ? s.delete(item.id!) : s.add(item.id!); return s; })
-          : setViewingFile(item)
-        }
-        onLongPress={() => { setIsSelectMode(true); setSelectedIds(new Set([item.id!])); }}
-        activeOpacity={0.7}
-      >
-        {isSelectMode && (
-          <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
-            {isSelected && <View style={styles.checkboxInner} />}
-          </View>
-        )}
-        <View style={[styles.fileIconWrap, { backgroundColor: ic.bg }]}>
-          {getIcon(item.type, 18, item.name)}
-        </View>
-        <View style={styles.fileInfo}>
-          <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
-          <Text style={styles.fileMeta}>{formatSize(item.size)} · {format(item.createdAt, 'MMM d, yyyy')}</Text>
-        </View>
-        {hasPreview && !isSelectMode && (
-          <View style={styles.previewBadge}>
-            <ZoomIn size={10} color="#2563eb" />
-          </View>
-        )}
-        <TouchableOpacity onPress={() => toggleStar(item)} style={styles.actionBtn}>
-          <Star size={13} color={starred ? '#f59e0b' : '#cbd5e1'} fill={starred ? '#f59e0b' : 'none'} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => { setEditingFile(item); setNewFileName(item.name); setShowRenameModal(true); }} style={styles.actionBtn}>
-          <Edit2 size={13} color="#94a3b8" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => deleteFile(item)} style={styles.actionBtn}>
-          <Trash2 size={13} color="#94a3b8" />
-        </TouchableOpacity>
-      </TouchableOpacity>
-      </Animated.View>
-    );
-  };
+  const renderFile = ({ item, index }: { item: LibreFile; index: number }) => (
+    <FileItem
+      item={item}
+      index={index}
+      isSelectMode={isSelectMode}
+      isSelected={selectedIds.has(item.id!)}
+      onPress={() => isSelectMode
+        ? setSelectedIds(prev => { const s = new Set(prev); s.has(item.id!) ? s.delete(item.id!) : s.add(item.id!); return s; })
+        : setViewingFile(item)
+      }
+      onLongPress={() => { setIsSelectMode(true); setSelectedIds(new Set([item.id!])); }}
+      onStar={() => toggleStar(item)}
+      onRename={() => { setEditingFile(item); setNewFileName(item.name); setShowRenameModal(true); }}
+      onDelete={() => deleteFile(item)}
+    />
+  );
 
   const renderFolder = ({ item }: { item: LibreFolder }) => (
-    <View style={styles.fileItem}>
-      <View style={[styles.fileIconWrap, { backgroundColor: '#fffbeb' }]}>
-        <FolderIcon size={18} color="#f59e0b" />
+    <View style={fiStyles.item}>
+      <View style={[fiStyles.iconWrap, { backgroundColor: '#fffbeb' }]}>
+        <FolderIcon size={20} color="#f59e0b" />
       </View>
-      <View style={styles.fileInfo}>
-        <Text style={styles.fileName}>{item.name}</Text>
-        <Text style={styles.fileMeta}>Folder</Text>
+      <View style={fiStyles.info}>
+        <Text style={fiStyles.name}>{item.name}</Text>
+        <View style={fiStyles.metaRow}>
+          <Text style={fiStyles.meta}>Folder</Text>
+        </View>
       </View>
     </View>
   );
@@ -772,7 +1156,14 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
               <Text style={styles.emptySub}>Create folders from the Library tab</Text>
             </View>
           ) : (
-            <FlatList data={folders} renderItem={renderFolder} keyExtractor={i => String(i.id)} contentContainerStyle={styles.listContent} />
+            <FlatList
+            data={folders}
+            renderItem={renderFolder}
+            keyExtractor={i => String(i.id)}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+          />
           )
         ) : filtered.length === 0 ? (
           <View style={styles.emptyBox}>
@@ -915,11 +1306,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 4,
   },
-  divider: { height: 8, backgroundColor: '#f8fafc' },
+  divider: { height: 10, backgroundColor: '#f8fafc' },
 
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 18, paddingTop: 18, paddingBottom: 14,
+    paddingHorizontal: 18, paddingTop: 20, paddingBottom: 14,
   },
   title:          { fontSize: 14, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase', letterSpacing: 0.8 },
   headerActions:  { flexDirection: 'row', gap: 8 },
@@ -931,13 +1322,13 @@ const styles = StyleSheet.create({
   actionCardText: { fontSize: 11, fontWeight: '800', color: '#2563eb' },
 
   // ── Chips ──
-  tabsScroll:   { height: 52 },
-  tabsContent:  { paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
+  tabsScroll:   { height: 56 },
+  tabsContent:  { paddingHorizontal: 18, paddingVertical: 11, gap: 8, alignItems: 'center' },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
     backgroundColor: '#f1f5f9',
-    height: 32,
+    height: 34,
   },
   tabText:      { fontSize: 11, fontWeight: '700', color: '#64748b' },
   tabCount:     { minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
@@ -946,18 +1337,18 @@ const styles = StyleSheet.create({
   // ── Search ──
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 14,
+    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 16,
   },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7,
     backgroundColor: '#f1f5f9',
-    borderRadius: 12, paddingHorizontal: 12, height: 42,
+    borderRadius: 13, paddingHorizontal: 14, height: 44,
   },
   searchInput: { flex: 1, fontSize: 13, color: '#1e293b', fontWeight: '500' },
   sortBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#f1f5f9',
-    borderRadius: 12, paddingHorizontal: 12, height: 42,
+    borderRadius: 13, paddingHorizontal: 12, height: 44,
   },
   sortBtnText: { fontSize: 10, fontWeight: '800', color: '#64748b' },
 
@@ -976,26 +1367,10 @@ const styles = StyleSheet.create({
   selectActionText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
   // ── File list ──
-  listContent: { padding: 16, paddingTop: 14, gap: 10 },
-  fileItem: {
-    flexDirection: 'row', alignItems: 'center',
-    padding: 14,
-    backgroundColor: '#fff', borderRadius: 16,
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
-  },
-  fileItemSelected: { backgroundColor: '#eff6ff' },
-  checkbox:       { width: 18, height: 18, borderRadius: 5, borderWidth: 2, borderColor: '#cbd5e1', marginRight: 10, alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { borderColor: '#2563eb', backgroundColor: '#2563eb' },
-  checkboxInner:  { width: 7, height: 7, backgroundColor: '#fff', borderRadius: 1.5 },
-  fileIconWrap:   { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
-  fileInfo:       { flex: 1 },
-  fileName:       { fontSize: 13, fontWeight: '700', color: '#1e293b', marginBottom: 1 },
-  fileMeta:       { fontSize: 10, color: '#94a3b8', marginTop: 3 },
-  previewBadge:   { width: 22, height: 22, borderRadius: 7, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center', marginRight: 2 },
-  actionBtn:      { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  listContent: { paddingHorizontal: 14, paddingTop: 14, paddingBottom: 40, gap: 10 },
+  /* FileItem styles moved to fiStyles above */
 
-  emptyBox:   { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 48, gap: 10 },
+  emptyBox:   { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 52, gap: 12 },
   emptyTitle: { fontSize: 13, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
   emptySub:   { fontSize: 11, color: '#cbd5e1', textAlign: 'center' },
 
