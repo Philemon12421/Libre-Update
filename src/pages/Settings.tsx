@@ -10,7 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   Bell, Database, Trash2, Shield, ChevronRight,
   Lock, CheckCircle, XCircle, AlertCircle,
-  Sparkles, Eye, EyeOff, Key, ExternalLink,
+  Eye, EyeOff, Key, ExternalLink,
   Zap, Plus, X, ChevronDown,
 } from 'lucide-react-native';
 import { db } from '../lib/db';
@@ -520,24 +520,26 @@ export default function SettingsPage() {
 
       {/* ── AI KEYS ── */}
       <Text style={st.sectionLabel}>AI INTEGRATION</Text>
-      <TouchableOpacity style={st.aiCard} onPress={() => setShowAPIModal(true)} activeOpacity={0.85}>
+      <TouchableOpacity style={st.aiCard} onPress={() => setShowAPIModal(true)} activeOpacity={0.88}>
+        {/* Gradient overlay — darker on right */}
+        <View style={st.aiCardOverlay} pointerEvents="none" />
         <View style={st.aiCardLeft}>
           <View style={st.aiCardIcon}>
-            <Sparkles size={20} color="#fff" />
+            <Key size={20} color="#fff" strokeWidth={2.5} />
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={st.aiCardTitle}>Document AI Keys</Text>
             <Text style={st.aiCardSub}>
               {configuredCount > 0
                 ? `${configuredCount} provider${configuredCount > 1 ? 's' : ''} configured`
-                : 'Tap to add your free AI keys'}
+                : 'Tap to add your free API keys'}
             </Text>
           </View>
         </View>
-        <View style={[st.aiCardBadge, configuredCount > 0 && { backgroundColor: '#ecfdf5' }]}>
+        <View style={[st.aiCardBadge, configuredCount > 0 && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
           {configuredCount > 0
-            ? <Text style={[st.aiCardBadgeText, { color: '#10b981' }]}>✓ Active</Text>
-            : <Text style={st.aiCardBadgeText}>Set Up</Text>}
+            ? <Text style={st.aiCardBadgeText}>✓ Active</Text>
+            : <Text style={st.aiCardBadgeText}>Set Up →</Text>}
         </View>
       </TouchableOpacity>
 
@@ -629,14 +631,19 @@ const st = StyleSheet.create({
 
   aiCard: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#2563eb', borderRadius: 20, padding: 18,
-    shadowColor: '#2563eb', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 14, elevation: 7,
+    backgroundColor: '#f97316', borderRadius: 20, padding: 18,
+    shadowColor: '#ea580c', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 14, elevation: 7,
+  },
+  aiCardOverlay: {
+    position: 'absolute', top: 0, right: 0, bottom: 0,
+    width: '50%', borderTopRightRadius: 20, borderBottomRightRadius: 20,
+    backgroundColor: '#ea580c', opacity: 0.55,
   },
   aiCardLeft:    { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  aiCardIcon:    { width: 44, height: 44, borderRadius: 14, backgroundColor: '#7c3aed', alignItems: 'center', justifyContent: 'center' },
+  aiCardIcon:    { width: 44, height: 44, borderRadius: 14, backgroundColor: '#ea580c', alignItems: 'center', justifyContent: 'center' },
   aiCardTitle:   { fontSize: 14, fontWeight: '800', color: '#fff' },
   aiCardSub:     { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  aiCardBadge:   { backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  aiCardBadge:   { backgroundColor: 'rgba(0,0,0,0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   aiCardBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
   card: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
