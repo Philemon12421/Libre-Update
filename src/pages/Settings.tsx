@@ -520,26 +520,58 @@ export default function SettingsPage() {
 
       {/* ── AI KEYS ── */}
       <Text style={st.sectionLabel}>AI INTEGRATION</Text>
-      <TouchableOpacity style={st.aiCard} onPress={() => setShowAPIModal(true)} activeOpacity={0.88}>
-        {/* Gradient overlay — darker on right */}
-        <View style={st.aiCardOverlay} pointerEvents="none" />
-        <View style={st.aiCardLeft}>
-          <View style={st.aiCardIcon}>
-            <Key size={20} color="#fff" strokeWidth={2.5} />
+
+      <TouchableOpacity style={st.aiCard} onPress={() => setShowAPIModal(true)} activeOpacity={0.9}>
+        {/* Background decoration circles */}
+        <View style={st.aiCircle1} pointerEvents="none" />
+        <View style={st.aiCircle2} pointerEvents="none" />
+
+        {/* Top row — icon + status */}
+        <View style={st.aiTopRow}>
+          <View style={st.aiIconBox}>
+            <Key size={22} color="#fff" strokeWidth={2.5} />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={st.aiCardTitle}>Document AI Keys</Text>
-            <Text style={st.aiCardSub}>
-              {configuredCount > 0
-                ? `${configuredCount} provider${configuredCount > 1 ? 's' : ''} configured`
-                : 'Tap to add your free API keys'}
+          <View style={[st.aiStatusPill, configuredCount > 0
+            ? { backgroundColor: 'rgba(255,255,255,0.2)' }
+            : { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
+            <View style={[st.aiStatusDot, { backgroundColor: configuredCount > 0 ? '#4ade80' : 'rgba(255,255,255,0.4)' }]} />
+            <Text style={st.aiStatusText}>
+              {configuredCount > 0 ? 'Active' : 'Not configured'}
             </Text>
           </View>
         </View>
-        <View style={[st.aiCardBadge, configuredCount > 0 && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
-          {configuredCount > 0
-            ? <Text style={st.aiCardBadgeText}>✓ Active</Text>
-            : <Text style={st.aiCardBadgeText}>Set Up →</Text>}
+
+        {/* Title + subtitle */}
+        <Text style={st.aiCardTitle}>Document AI</Text>
+        <Text style={st.aiCardSub}>
+          Ask questions about your files, get summaries, and explore research — powered by AI
+        </Text>
+
+        {/* Provider pills */}
+        <View style={st.aiProviderRow}>
+          {[
+            { id: 'groq',      label: 'Groq',      color: '#fed7aa' },
+            { id: 'openai',    label: 'OpenAI',    color: '#bbf7d0' },
+            { id: 'gemini',    label: 'Gemini',    color: '#bfdbfe' },
+            { id: 'anthropic', label: 'Anthropic', color: '#ddd6fe' },
+          ].map(p => (
+            <View key={p.id} style={[st.aiProviderPill, { backgroundColor: 'rgba(255,255,255,0.15)' }]}>
+              <View style={[st.aiProviderDot, { backgroundColor: p.color }]} />
+              <Text style={st.aiProviderLabel}>{p.label}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* CTA */}
+        <View style={st.aiCTA}>
+          <Text style={st.aiCTAText}>
+            {configuredCount > 0
+              ? `${configuredCount} of 4 providers configured — tap to manage`
+              : 'Tap to add your free API keys'}
+          </Text>
+          <View style={st.aiCTAArrow}>
+            <Text style={{ color: '#f97316', fontSize: 14, fontWeight: '900' }}>→</Text>
+          </View>
         </View>
       </TouchableOpacity>
 
@@ -630,21 +662,35 @@ const st = StyleSheet.create({
   sectionLabel:  { fontSize: 9, fontWeight: '900', color: '#94a3b8', letterSpacing: 1.5, marginBottom: 10, marginTop: 24, paddingLeft: 2 },
 
   aiCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#f97316', borderRadius: 20, padding: 18,
-    shadowColor: '#ea580c', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 14, elevation: 7,
+    backgroundColor: '#f97316',
+    borderRadius: 24, padding: 20, overflow: 'hidden',
+    shadowColor: '#c2410c', shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45, shadowRadius: 18, elevation: 10,
   },
-  aiCardOverlay: {
-    position: 'absolute', top: 0, right: 0, bottom: 0,
-    width: '50%', borderTopRightRadius: 20, borderBottomRightRadius: 20,
-    backgroundColor: '#ea580c', opacity: 0.55,
+  aiCircle1: {
+    position: 'absolute', width: 180, height: 180, borderRadius: 90,
+    backgroundColor: '#ea580c', opacity: 0.5,
+    top: -60, right: -40,
   },
-  aiCardLeft:    { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
-  aiCardIcon:    { width: 44, height: 44, borderRadius: 14, backgroundColor: '#ea580c', alignItems: 'center', justifyContent: 'center' },
-  aiCardTitle:   { fontSize: 14, fontWeight: '800', color: '#fff' },
-  aiCardSub:     { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 2 },
-  aiCardBadge:   { backgroundColor: 'rgba(0,0,0,0.12)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  aiCardBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  aiCircle2: {
+    position: 'absolute', width: 110, height: 110, borderRadius: 55,
+    backgroundColor: '#c2410c', opacity: 0.35,
+    bottom: -30, left: -20,
+  },
+  aiTopRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
+  aiIconBox:   { width: 48, height: 48, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  aiStatusPill:{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
+  aiStatusDot: { width: 7, height: 7, borderRadius: 3.5 },
+  aiStatusText:{ fontSize: 11, fontWeight: '700', color: '#fff' },
+  aiCardTitle: { fontSize: 20, fontWeight: '900', color: '#fff', marginBottom: 6, letterSpacing: -0.3 },
+  aiCardSub:   { fontSize: 12, color: 'rgba(255,255,255,0.8)', lineHeight: 18, marginBottom: 18 },
+  aiProviderRow:  { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 18 },
+  aiProviderPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
+  aiProviderDot:  { width: 7, height: 7, borderRadius: 3.5 },
+  aiProviderLabel:{ fontSize: 10, fontWeight: '700', color: '#fff' },
+  aiCTA:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11 },
+  aiCTAText:   { fontSize: 11, fontWeight: '600', color: '#fff', flex: 1 },
+  aiCTAArrow:  { width: 28, height: 28, borderRadius: 9, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
 
   card: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
   rowDiv:  { height: 1, backgroundColor: '#f8fafc', marginHorizontal: 16 },
