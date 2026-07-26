@@ -233,9 +233,9 @@ function APIKeyModal({ visible, onClose }: { visible: boolean; onClose: () => vo
               </ScrollView>
 
               {/* Provider card */}
-              <View style={[ak.providerCard, { borderColor: provider.bg }]}>
+              <View style={ak.providerCard}>
                 {/* Description */}
-                <View style={[ak.providerHeader, { backgroundColor: provider.bg }]}>
+                <View style={ak.providerHeader}>
                   <View style={[ak.providerDot, { backgroundColor: provider.color }]} />
                   <Text style={[ak.providerName, { color: provider.color }]}>{provider.name}</Text>
                   <Text style={ak.providerDesc}>{provider.desc}</Text>
@@ -278,7 +278,7 @@ function APIKeyModal({ visible, onClose }: { visible: boolean; onClose: () => vo
                       {provider.models.map(m => (
                         <TouchableOpacity
                           key={m}
-                          style={[ak.modelOption, selectedModel === m && { backgroundColor: provider.bg }]}
+                          style={[ak.modelOption, selectedModel === m && { backgroundColor: '#fafafa' }]}
                           onPress={() => { setSelectedModel(m); setShowModelDrop(false); }}
                         >
                           <Text style={[ak.modelOptionText, selectedModel === m && { color: provider.color, fontWeight: '700' }]}>{m}</Text>
@@ -326,7 +326,7 @@ function APIKeyModal({ visible, onClose }: { visible: boolean; onClose: () => vo
                 {PROVIDERS.map(p => {
                   const hasKey = !!(apiKeys[p.id]?.trim());
                   return (
-                    <View key={p.id} style={[ak.summaryChip, { backgroundColor: hasKey ? p.bg : '#f8fafc' }]}>
+                    <View key={p.id} style={ak.summaryChip}>
                       <View style={[ak.summaryDot, { backgroundColor: hasKey ? p.color : '#cbd5e1' }]} />
                       <Text style={[ak.summaryChipText, { color: hasKey ? p.color : '#94a3b8' }]}>{p.name}</Text>
                     </View>
@@ -344,76 +344,113 @@ function APIKeyModal({ visible, onClose }: { visible: boolean; onClose: () => vo
 }
 
 const ak = StyleSheet.create({
-  overlay:   { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.5)' },
-  backdrop:  { ...StyleSheet.absoluteFillObject },
+  overlay:  { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(15,23,42,0.45)' },
+  backdrop: { ...StyleSheet.absoluteFillObject },
   sheet: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 32, borderTopRightRadius: 32,
-    maxHeight: '90%', minHeight: '60%',
+    maxHeight: '92%', minHeight: '60%',
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12, shadowRadius: 20, elevation: 20,
+    shadowOpacity: 0.1, shadowRadius: 24, elevation: 24,
   },
-  topRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingTop: 14, paddingHorizontal: 20, marginBottom: 4 },
-  handle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', flex: 1, marginRight: 8 },
-  closeBtn: { width: 30, height: 30, borderRadius: 9, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
 
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 22, paddingBottom: 18 },
-  titleIcon:{ width: 46, height: 46, borderRadius: 14, backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' },
-  title:    { fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  titleSub: { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  // ── Top bar ──
+  topRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, paddingHorizontal: 22, marginBottom: 0 },
+  handle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', alignSelf: 'center' },
+  closeBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2 },
 
-  providerTabs:    { paddingHorizontal: 22, gap: 8, paddingBottom: 16 },
+  // ── Title ──
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 20 },
+  titleIcon:{ width: 50, height: 50, borderRadius: 16, backgroundColor: '#f97316', alignItems: 'center', justifyContent: 'center', shadowColor: '#f97316', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  title:    { fontSize: 20, fontWeight: '900', color: '#0f172a' },
+  titleSub: { fontSize: 12, color: '#94a3b8', marginTop: 3 },
+
+  // ── Provider tabs ──
+  providerTabs:    { paddingHorizontal: 22, gap: 8, paddingBottom: 20 },
   providerTab: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: 'transparent',
-    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20,
+    backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
-  keyDot:          { width: 6, height: 6, borderRadius: 3 },
-  providerTabText: { fontSize: 12, fontWeight: '600', color: '#64748b' },
+  keyDot:          { width: 7, height: 7, borderRadius: 3.5 },
+  providerTabText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
 
+  // ── Provider card (white, shadow only) ──
   providerCard: {
     marginHorizontal: 16, borderRadius: 20, overflow: 'hidden',
-    borderWidth: 1.5, marginBottom: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05, shadowRadius: 8, elevation: 2,
+    backgroundColor: '#fff', marginBottom: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.07, shadowRadius: 12, elevation: 4,
   },
   providerHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    padding: 14, flexWrap: 'wrap',
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 16, paddingVertical: 14, flexWrap: 'wrap',
+    backgroundColor: '#fff',
   },
-  providerDot:  { width: 8, height: 8, borderRadius: 4 },
-  providerName: { fontSize: 13, fontWeight: '900' },
-  providerDesc: { fontSize: 11, color: '#64748b', flex: 1 },
-  getKeyBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  providerDot:  { width: 9, height: 9, borderRadius: 4.5 },
+  providerName: { fontSize: 14, fontWeight: '900', color: '#0f172a' },
+  providerDesc: { fontSize: 11, color: '#94a3b8', flex: 1 },
+  getKeyBtn:    { flexDirection: 'row', alignItems: 'center', gap: 5 },
   getKeyText:   { fontSize: 10, fontWeight: '800' },
 
-  inputSection: { paddingHorizontal: 16, paddingTop: 14 },
-  inputLabel:   { fontSize: 9, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 8 },
-  inputRow:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8fafc', borderRadius: 12, overflow: 'hidden' },
-  keyInput:     { flex: 1, fontSize: 13, color: '#1e293b', padding: 13, fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
-  eyeBtn:       { width: 42, height: 44, alignItems: 'center', justifyContent: 'center' },
+  // ── Inputs (white background, subtle shadow) ──
+  inputSection: { paddingHorizontal: 16, paddingTop: 10 },
+  inputLabel:   { fontSize: 9, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+  keyInput: {
+    flex: 1, fontSize: 13, color: '#1e293b', padding: 14,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  eyeBtn: { width: 44, height: 48, alignItems: 'center', justifyContent: 'center' },
 
-  modelBtn:      { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#f8fafc', borderRadius: 12, padding: 13 },
-  modelBtnText:  { flex: 1, fontSize: 12, fontWeight: '600', color: '#1e293b' },
-  modelDropdown: { backgroundColor: '#fff', borderRadius: 12, marginTop: 6, overflow: 'hidden', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 8, elevation: 4 },
-  modelOption:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 13 },
-  modelOptionText: { fontSize: 12, color: '#475569' },
+  // ── Model picker (white) ──
+  modelBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff', borderRadius: 14, padding: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+  },
+  modelBtnText:  { flex: 1, fontSize: 13, fontWeight: '600', color: '#1e293b' },
+  modelDropdown: {
+    backgroundColor: '#fff', borderRadius: 14, marginTop: 8,
+    overflow: 'hidden',
+    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  modelOption:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14 },
+  modelOptionText: { fontSize: 13, color: '#475569' },
 
-  actions:     { flexDirection: 'row', gap: 10, padding: 16, paddingTop: 14 },
-  testBtn:     { flex: 1, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  // ── Actions ──
+  actions:     { flexDirection: 'row', gap: 10, padding: 16, paddingTop: 16 },
+  testBtn:     { flex: 1, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   testBtnText: { fontSize: 12, fontWeight: '800' },
-  saveBtn:     { flex: 2, height: 46, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  saveBtn:     { flex: 2, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   saveBtnText: { fontSize: 12, fontWeight: '900', color: '#fff' },
 
-  statusRow:  { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 16, paddingBottom: 14 },
-  statusDot:  { width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#10b981' },
-  statusText: { fontSize: 10, color: '#10b981', fontWeight: '600' },
+  // ── Status ──
+  statusRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 16 },
+  statusDot:  { width: 8, height: 8, borderRadius: 4, backgroundColor: '#10b981' },
+  statusText: { fontSize: 11, color: '#10b981', fontWeight: '700' },
 
-  summaryLabel: { fontSize: 9, fontWeight: '900', color: '#94a3b8', letterSpacing: 1.5, paddingHorizontal: 22, marginBottom: 10 },
+  // ── Summary ──
+  summaryLabel: { fontSize: 9, fontWeight: '900', color: '#94a3b8', letterSpacing: 1.5, paddingHorizontal: 22, marginBottom: 12 },
   summaryRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 22 },
-  summaryChip:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
-  summaryDot:   { width: 6, height: 6, borderRadius: 3 },
-  summaryChipText: { fontSize: 11, fontWeight: '700' },
+  summaryChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    backgroundColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+  },
+  summaryDot:      { width: 7, height: 7, borderRadius: 3.5 },
+  summaryChipText: { fontSize: 12, fontWeight: '700' },
 });
 
 // ── Main Settings Page ────────────────────────────────────────────────────

@@ -508,14 +508,18 @@ const aiStyles = StyleSheet.create({
 
 // ── Document Viewer ────────────────────────────────────────────────────────
 function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => void }) {
-  const [textContent, setTextContent] = useState('');
-  const [webLoading,  setWebLoading]  = useState(true);
-  const [imgLoaded,   setImgLoaded]   = useState(false);
-  const [showAI,      setShowAI]      = useState(false);
+  const [textContent,  setTextContent]  = useState('');
+  const [editedText,   setEditedText]   = useState('');
+  const [isEditing,    setIsEditing]    = useState(false);
+  const [saving,       setSaving]       = useState(false);
+  const [webLoading,   setWebLoading]   = useState(true);
+  const [imgLoaded,    setImgLoaded]    = useState(false);
+  const [showAI,       setShowAI]       = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const type  = getPreviewType(file);
   const ic    = getIconColor(file.type, file.name);
-  const isLocal = !file.data.startsWith('http') && !file.data.startsWith('data:');
+  const isLocal    = !file.data.startsWith('http') && !file.data.startsWith('data:');
+  const isTextFile = type === 'text';
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: 1, tension: 55, friction: 9, useNativeDriver: true }).start();
@@ -531,9 +535,31 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
             ? atob(file.data.split(',')[1])
             : await (await fetch(file.data)).text();
         setTextContent(src);
+        setEditedText(src);
       } catch { setTextContent('Could not read file.'); }
     })();
   }, [file]);
+
+  const saveTextFile = async () => {
+    setSaving(true);
+    try {
+      if (Platform.OS !== 'web') {
+        await FileSystem.writeAsStringAsync(file.data, editedText);
+      }
+      setTextContent(editedText);
+      setIsEditing(false);
+      Alert.alert('✓ Saved', `"${file.name}" saved successfully.`);
+    } catch {
+      Alert.alert('Error', 'Could not save file.');
+    } finally { setSaving(false); }
+  };
+
+  const discardEdits = () => {
+    Alert.alert('Discard Changes', 'Lose all unsaved changes?', [
+      { text: 'Keep Editing', style: 'cancel' },
+      { text: 'Discard', style: 'destructive', onPress: () => { setEditedText(textContent); setIsEditing(false); } },
+    ]);
+  };
 
   const handleClose = () => {
     Animated.timing(slideAnim, { toValue: 0, duration: 200, useNativeDriver: true }).start(onClose);
@@ -585,19 +611,47 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
     );
 
     // TEXT / CODE
-    if (type === 'text') return (
-      <View style={{ flex: 1 }}>
-        <WebView
+    if (type === 'text') {
+      if (isEditing) return (
+        <KeyboardAvoidingView
           style={{ flex: 1 }}
-          originWhitelist={['*']}
-          source={{ html: buildTextHtml(textContent, file.name) }}
-          onLoadEnd={() => setWebLoading(false)}
-          showsVerticalScrollIndicator={false}
-          scrollEnabled
-        />
-        <LoadingOverlay />
-      </View>
-    );
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 110 : 60}
+        >
+          <ScrollView
+            style={vStyles.editorScroll}
+            contentContainerStyle={{ flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="none"
+          >
+            <TextInput
+              style={vStyles.editorInput}
+              value={editedText}
+              onChangeText={setEditedText}
+              multiline
+              autoFocus
+              textAlignVertical="top"
+              scrollEnabled={false}
+              placeholder="Start typing…"
+              placeholderTextColor="#cbd5e1"
+            />
+          </ScrollView>
+        </KeyboardAvoidingView>
+      );
+      return (
+        <View style={{ flex: 1 }}>
+          <WebView
+            style={{ flex: 1 }}
+            originWhitelist={['*']}
+            source={{ html: buildTextHtml(textContent, file.name) }}
+            onLoadEnd={() => setWebLoading(false)}
+            showsVerticalScrollIndicator={false}
+            scrollEnabled
+          />
+          <LoadingOverlay />
+        </View>
+      );
+    }
 
     // PDF
     if (type === 'pdf') return (
@@ -641,23 +695,38 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
     <Animated.View style={[vStyles.container, { transform: [{ translateY }] }]}>
       {/* Header */}
       <View style={vStyles.header}>
-        <TouchableOpacity onPress={handleClose} style={vStyles.backBtn} activeOpacity={0.7}>
+        <TouchableOpacity onPress={isEditing ? discardEdits : handleClose} style={vStyles.backBtn} activeOpacity={0.7}>
           <ChevronLeft size={20} color="#0f172a" />
         </TouchableOpacity>
         <View style={vStyles.headerMeta}>
           <View style={[vStyles.headerTypeTag, { backgroundColor: ic.bg }]}>
             {getIcon(file.type, 11, file.name)}
             <Text style={[vStyles.headerTypeText, { color: ic.color }]}>
-              {file.name.split('.').pop()?.toUpperCase()}
+              {isEditing ? 'EDITING' : file.name.split('.').pop()?.toUpperCase()}
             </Text>
           </View>
           <Text style={vStyles.headerName} numberOfLines={1}>{file.name}</Text>
           <Text style={vStyles.headerSize}>{formatSize(file.size)} · {format(file.createdAt, 'MMM d, yyyy')}</Text>
         </View>
-        <TouchableOpacity onPress={() => setShowAI(true)} style={vStyles.aiBtn} activeOpacity={0.8}>
-          <Sparkles size={15} color="#7c3aed" />
-          <Text style={vStyles.aiBtnText}>Ask AI</Text>
-        </TouchableOpacity>
+        {isTextFile && !isEditing && (
+          <TouchableOpacity onPress={() => setIsEditing(true)} style={vStyles.editBtn} activeOpacity={0.8}>
+            <Edit2 size={14} color="#10b981" />
+            <Text style={vStyles.editBtnText}>Edit</Text>
+          </TouchableOpacity>
+        )}
+        {isEditing && (
+          <TouchableOpacity onPress={saveTextFile} style={vStyles.saveEditBtn} activeOpacity={0.85} disabled={saving}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <Text style={vStyles.saveEditBtnText}>Save</Text>}
+          </TouchableOpacity>
+        )}
+        {!isEditing && (
+          <TouchableOpacity onPress={() => setShowAI(true)} style={vStyles.aiBtn} activeOpacity={0.8}>
+            <Sparkles size={15} color="#7c3aed" />
+            <Text style={vStyles.aiBtnText}>Ask AI</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity onPress={() => Sharing.shareAsync(file.data)} style={vStyles.shareBtn} activeOpacity={0.7}>
           <Download size={16} color="#2563eb" />
         </TouchableOpacity>
@@ -667,16 +736,30 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
       <View style={vStyles.body}>{renderBody()}</View>
 
       {/* Footer */}
-      <View style={vStyles.footer}>
-        <TouchableOpacity style={vStyles.footerBtn} onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
-          <Download size={15} color="#fff" />
-          <Text style={vStyles.footerBtnText}>Share / Export</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={vStyles.aiFooterBtn} onPress={() => setShowAI(true)} activeOpacity={0.85}>
-          <Sparkles size={15} color="#7c3aed" />
-          <Text style={vStyles.aiFooterBtnText}>Ask AI</Text>
-        </TouchableOpacity>
-      </View>
+      {!isEditing && (
+        <View style={vStyles.footer}>
+          <TouchableOpacity style={vStyles.footerBtn} onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
+            <Download size={15} color="#fff" />
+            <Text style={vStyles.footerBtnText}>Share / Export</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={vStyles.aiFooterBtn} onPress={() => setShowAI(true)} activeOpacity={0.85}>
+            <Sparkles size={15} color="#7c3aed" />
+            <Text style={vStyles.aiFooterBtnText}>Ask AI</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+      {isEditing && (
+        <View style={vStyles.editFooter}>
+          <TouchableOpacity style={vStyles.discardBtn} onPress={discardEdits} activeOpacity={0.8}>
+            <Text style={vStyles.discardBtnText}>Discard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={vStyles.saveEditFooterBtn} onPress={saveTextFile} activeOpacity={0.85} disabled={saving}>
+            {saving
+              ? <ActivityIndicator size="small" color="#fff" />
+              : <><Text style={vStyles.saveEditFooterBtnText}>Save File</Text></>}
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* AI Chat Panel */}
       {showAI && (
@@ -1223,7 +1306,7 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
 
       {/* ── Rename modal ── */}
       <Modal visible={showRenameModal} transparent animationType="fade">
-        <KeyboardAvoidingView style={styles.overlayCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 44 : 0}>
+        <KeyboardAvoidingView style={styles.overlayCenter} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
           <View style={styles.dialog}>
             <Text style={styles.dialogTitle}>Rename File</Text>
             <TextInput
@@ -1273,30 +1356,36 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 44 : 0}
+          keyboardVerticalOffset={0}
         >
-          <View style={[styles.sheet, { maxHeight: '85%' }]}>
+          <View style={[styles.sheet, { maxHeight: '90%' }]}>
             <View style={styles.handle} />
             <Text style={styles.sheetTitle}>Create Note</Text>
-            <TextInput
-              style={styles.dialogInput}
-              placeholder="Filename (e.g. my_note.txt)"
-              placeholderTextColor="#94a3b8"
-              value={noteName}
-              onChangeText={setNoteName}
-              returnKeyType="next"
-            />
-            <TextInput
-              style={[styles.dialogInput, styles.noteBody]}
-              placeholder="Write your note here…"
-              placeholderTextColor="#cbd5e1"
-              multiline
-              value={noteContent}
-              onChangeText={setNoteContent}
-              textAlignVertical="top"
-              scrollEnabled
-            />
-            <TouchableOpacity style={[styles.dialogBtn, { marginTop: 12 }]} onPress={createNote} disabled={savingNote}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10, paddingBottom: 8 }}
+            >
+              <TextInput
+                style={styles.dialogInput}
+                placeholder="Filename (e.g. my_note.txt)"
+                placeholderTextColor="#94a3b8"
+                value={noteName}
+                onChangeText={setNoteName}
+                returnKeyType="next"
+              />
+              <TextInput
+                style={[styles.dialogInput, styles.noteBody]}
+                placeholder="Write your note here…"
+                placeholderTextColor="#cbd5e1"
+                multiline
+                value={noteContent}
+                onChangeText={setNoteContent}
+                textAlignVertical="top"
+                scrollEnabled={false}
+              />
+            </ScrollView>
+            <TouchableOpacity style={[styles.dialogBtn, { marginTop: 10 }]} onPress={createNote} disabled={savingNote}>
               {savingNote ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.dialogBtnText}>Create Note</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={styles.sheetCancel} onPress={() => { setShowNoteModal(false); setNoteName(''); setNoteContent(''); }}>
@@ -1414,8 +1503,40 @@ const styles = StyleSheet.create({
     borderRadius: 12, padding: 13,
     fontSize: 14, color: '#1e293b',
   },
-  noteBody:      { height: 130, marginTop: 8, textAlignVertical: 'top' },
+  noteBody:      { height: 160, textAlignVertical: 'top' },
   dialogBtn:     { backgroundColor: '#2563eb', width: '100%', height: 50, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
   dialogBtnText: { color: '#fff', fontSize: 11, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
   dialogCancel:  { fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginTop: 8 },
+  // ── Text editor ──
+  editorScroll: { flex: 1, backgroundColor: '#fff' },
+  editorInput: {
+    flex: 1, padding: 18,
+    fontSize: 14, color: '#1e293b', lineHeight: 24,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    minHeight: 400, textAlignVertical: 'top',
+  },
+  editBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#ecfdf5', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 10,
+  },
+  editBtnText:     { fontSize: 11, fontWeight: '800', color: '#10b981' },
+  saveEditBtn: {
+    backgroundColor: '#10b981', paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 10, alignItems: 'center', justifyContent: 'center', minWidth: 52,
+  },
+  saveEditBtnText: { fontSize: 11, fontWeight: '900', color: '#fff' },
+  editFooter: {
+    flexDirection: 'row', gap: 10, padding: 14,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#f1f5f9',
+    backgroundColor: '#fff',
+  },
+  discardBtn:          { flex: 1, height: 48, borderRadius: 14, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center' },
+  discardBtnText:      { fontSize: 12, fontWeight: '700', color: '#94a3b8' },
+  saveEditFooterBtn: {
+    flex: 2, height: 48, borderRadius: 14, backgroundColor: '#10b981',
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#10b981', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
+  },
+  saveEditFooterBtnText: { fontSize: 12, fontWeight: '900', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
 });
