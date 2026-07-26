@@ -102,127 +102,209 @@ function formatSize(bytes: number) {
 // ── HTML builders ──────────────────────────────────────────────────────────
 
 function buildPdfHtml(uri: string): string {
-  // Use Google Docs viewer for all PDFs — most reliable cross-platform approach
-  const isHttp = uri.startsWith('http');
-  if (isHttp) {
-    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(uri)}&embedded=true`;
+  const isRemote = uri.startsWith('http');
+
+  if (isRemote) {
+    // Remote PDF: use Google Docs viewer iframe — fastest, no JS required
+    const gdocsUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(uri)}&embedded=true`;
     return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{margin:0;padding:0}body{background:#1a1a2e}iframe{width:100vw;height:100vh;border:none}</style>
-</head><body>
-<iframe src="${viewerUrl}" allowfullscreen></iframe>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fff}
+  iframe{width:100vw;height:100vh;border:none;display:block}
+  #loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;background:#fff;font-family:sans-serif;gap:14px;color:#64748b;font-size:13px}
+  .ring{width:36px;height:36px;border:3px solid #f1f5f9;border-top-color:#2563eb;
+    border-radius:50%;animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body>
+<div id="loader"><div class="ring"></div>Loading PDF…</div>
+<iframe src="${gdocsUrl}"
+  onload="document.getElementById('loader').style.display='none'"
+  onerror="document.getElementById('loader').innerHTML='<div style=color:#ef4444>Could not load PDF.<br>Try opening with an external app.</div>'">
+</iframe>
 </body></html>`;
   }
-  // Local PDF — use pdf.js from CDN with the file URI
+
+  // Local PDF: render with pdf.js — clean, page-by-page
   return `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=3">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=2">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#1e1e2e;font-family:sans-serif}
-#toolbar{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f172a;position:sticky;top:0;z-index:10}
-.info{color:#94a3b8;font-size:12px;text-align:center;flex:1}
-.info span{color:#60a5fa;font-weight:700}
-.btn{background:#1e293b;border:none;color:#e2e8f0;border-radius:8px;padding:7px 13px;font-size:12px;cursor:pointer}
-#wrap{display:flex;flex-direction:column;align-items:center;padding:12px;gap:12px;min-height:100vh}
-canvas{border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,0.5);max-width:100%;background:#fff}
-#load{display:flex;flex-direction:column;align-items:center;justify-content:center;height:80vh;color:#60a5fa;gap:14px;font-size:13px}
-.spin{width:34px;height:34px;border:3px solid #1e293b;border-top-color:#60a5fa;border-radius:50%;animation:s 0.9s linear infinite}
-@keyframes s{to{transform:rotate(360deg)}}
-#err{padding:30px;text-align:center;color:#f87171;font-size:12px;line-height:1.7;display:none}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#f8fafc;font-family:-apple-system,sans-serif}
+  #bar{position:sticky;top:0;z-index:9;background:#fff;
+       display:flex;align-items:center;gap:8px;padding:10px 14px;
+       border-bottom:1px solid #f1f5f9;
+       box-shadow:0 1px 8px rgba(0,0,0,0.06)}
+  .info{flex:1;text-align:center;font-size:12px;color:#64748b;font-weight:600}
+  .info b{color:#1e293b}
+  .btn{background:#f8fafc;border:none;border-radius:9px;padding:7px 14px;
+       font-size:12px;font-weight:700;color:#2563eb;cursor:pointer;transition:.15s}
+  .btn:active{background:#eff6ff}
+  #pages{display:flex;flex-direction:column;align-items:center;padding:16px 12px;gap:16px}
+  canvas{border-radius:8px;box-shadow:0 2px 16px rgba(0,0,0,0.1);max-width:100%;background:#fff}
+  #loading{display:flex;flex-direction:column;align-items:center;
+    justify-content:center;min-height:70vh;gap:14px;color:#64748b;font-size:13px}
+  .ring{width:36px;height:36px;border:3px solid #f1f5f9;border-top-color:#2563eb;
+    border-radius:50%;animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #err{padding:32px;text-align:center;color:#ef4444;font-size:13px;
+       line-height:1.7;display:none}
 </style></head><body>
-<div id="toolbar">
-  <button class="btn" onclick="go(-1)">‹</button>
-  <div class="info">Page <span id="pn">–</span> / <span id="pc">–</span></div>
-  <button class="btn" onclick="go(1)">›</button>
-  <button class="btn" onclick="zoomIn()">＋</button>
-  <button class="btn" onclick="zoomOut()">－</button>
+<div id="bar">
+  <button class="btn" onclick="prev()">‹</button>
+  <div class="info">Page <b id="pn">–</b> of <b id="pc">–</b></div>
+  <button class="btn" onclick="next()">›</button>
+  <button class="btn" onclick="zIn()">＋</button>
+  <button class="btn" onclick="zOut()">－</button>
 </div>
-<div id="load"><div class="spin"></div>Loading PDF…</div>
-<div id="wrap" style="display:none"></div>
+<div id="loading"><div class="ring"></div>Loading PDF…</div>
+<div id="pages" style="display:none"></div>
 <div id="err"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
-var workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-pdfjsLib.GlobalWorkerOptions.workerSrc=workerSrc;
-var pdf=null,page=1,scale=1.2,busy=false;
-var wrap=document.getElementById('wrap');
-var load=document.getElementById('load');
+pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+var pdf,pg=1,sc=1.3,busy=false;
+var pages=document.getElementById('pages');
+var loading=document.getElementById('loading');
 var err=document.getElementById('err');
 
-function showErr(msg){load.style.display='none';wrap.style.display='none';err.style.display='block';err.textContent=msg;}
+function showErr(m){
+  loading.style.display='none';
+  err.style.display='block';
+  err.innerHTML='<b>Cannot load PDF</b><br>'+m+'<br><br><span style="color:#94a3b8;font-size:11px">Try sharing the file to open in a PDF viewer app.</span>';
+}
 
-pdfjsLib.getDocument({url:'${uri}',disableStream:true,disableRange:true}).promise.then(function(doc){
-  pdf=doc;
-  document.getElementById('pc').textContent=doc.numPages;
-  load.style.display='none';
-  wrap.style.display='flex';
+pdfjsLib.getDocument({url:'${uri}'}).promise.then(function(d){
+  pdf=d;
+  document.getElementById('pc').textContent=d.numPages;
+  loading.style.display='none';
+  pages.style.display='flex';
   render(1);
-}).catch(function(e){showErr('Cannot load PDF.\n'+e.message+'\n\nTry sharing the file and opening in a PDF viewer app.');});
+}).catch(function(e){showErr(e.message);});
 
 function render(n){
-  if(busy||!pdf)return;busy=true;page=n;
+  if(busy||!pdf)return;busy=true;pg=n;
   pdf.getPage(n).then(function(p){
-    var vp=p.getViewport({scale:scale});
-    var id='c'+n;
-    var c=document.getElementById(id);
-    if(!c){c=document.createElement('canvas');c.id=id;wrap.innerHTML='';wrap.appendChild(c);}
+    var vp=p.getViewport({scale:sc});
+    pages.innerHTML='';
+    var c=document.createElement('canvas');
     c.width=vp.width;c.height=vp.height;
+    pages.appendChild(c);
     p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
-      document.getElementById('pn').textContent=n;busy=false;
+      document.getElementById('pn').textContent=n;
+      busy=false;
+      window.scrollTo({top:0,behavior:'smooth'});
     });
-  });
+  }).catch(function(e){showErr(e.message);busy=false;});
 }
-function go(d){var n=page+d;if(pdf&&n>=1&&n<=pdf.numPages)render(n);}
-function zoomIn(){scale=Math.min(scale+0.25,3.5);render(page);}
-function zoomOut(){scale=Math.max(scale-0.25,0.5);render(page);}
+function prev(){if(pg>1)render(pg-1);}
+function next(){if(pdf&&pg<pdf.numPages)render(pg+1);}
+function zIn(){sc=Math.min(sc+0.2,3);render(pg);}
+function zOut(){sc=Math.max(sc-0.2,0.5);render(pg);}
 </script></body></html>`;
 }
 
 
 function buildOfficeViewerHtml(uri: string): string {
-  const src = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(uri)}`;
+  const msUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(uri)}`;
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*{margin:0;padding:0;box-sizing:border-box}body{background:#fff}
-iframe{width:100vw;height:100vh;border:none;display:block}</style>
-</head><body>
-<iframe src="${src}" allowfullscreen></iframe>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fff}
+  iframe{width:100vw;height:100vh;border:none;display:block}
+  #loader{position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;background:#fff;
+    font-family:sans-serif;gap:14px;color:#64748b;font-size:13px}
+  .ring{width:36px;height:36px;border:3px solid #f1f5f9;border-top-color:#2563eb;
+    border-radius:50%;animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body>
+<div id="loader"><div class="ring"></div>Loading document…</div>
+<iframe src="${msUrl}"
+  onload="document.getElementById('loader').style.display='none'"
+  onerror="document.getElementById('loader').innerHTML='<div style=color:#ef4444>Cannot preview. Open with an external app.</div>'">
+</iframe>
 </body></html>`;
 }
 
+
 function buildTextHtml(text: string, name: string): string {
   const ext    = name.split('.').pop()?.toLowerCase() ?? '';
-  const isCode = ['js','ts','jsx','tsx','html','css','json','xml','yaml','yml','py','java','cpp','c','sh','md'].includes(ext);
+  const isCode = ['js','ts','jsx','tsx','html','css','json','xml','yaml','yml',
+                  'py','java','cpp','c','sh','php','rb','go','rs','swift'].includes(ext);
+  const isMd   = ext === 'md';
   const esc    = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  if (isMd) {
+    // Clean markdown-style rendering
+    const html = esc
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,   '<em>$1</em>')
+      .replace(/`(.+?)`/g,     '<code>$1</code>')
+      .replace(/^- (.+)$/gm,   '<li>$1</li>')
+      .replace(/
+
+/g,        '</p><p>')
+      .replace(/
+/g,          '<br>');
+    return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;
+       font-size:15px;line-height:1.8;padding:20px 18px;max-width:720px;margin:0 auto}
+  h1{font-size:22px;font-weight:900;margin:20px 0 10px;color:#0f172a}
+  h2{font-size:18px;font-weight:800;margin:16px 0 8px;color:#0f172a}
+  h3{font-size:15px;font-weight:700;margin:14px 0 6px;color:#1e293b}
+  p{margin-bottom:12px}
+  li{margin-left:20px;margin-bottom:6px}
+  strong{font-weight:700}
+  em{font-style:italic;color:#475569}
+  code{background:#f1f5f9;padding:2px 6px;border-radius:5px;
+       font-family:monospace;font-size:13px;color:#7c3aed}
+</style></head><body><p>${html}</p></body></html>`;
+  }
 
   if (isCode) {
-    const lines = esc.split('\n').map((line, i) =>
-      `<tr><td class="ln">${i + 1}</td><td class="code">${line || ' '}</td></tr>`
+    const rows = esc.split('\n').map((l, i) =>
+      `<tr><td class="n">${i+1}</td><td class="c">${l||'&nbsp;'}</td></tr>`
     ).join('');
     return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#0f172a;color:#e2e8f0;font-family:'Courier New',monospace;font-size:12px}
-table{width:100%;border-collapse:collapse;padding:12px 0}
-.ln{color:#334155;text-align:right;padding:3px 12px 3px 8px;user-select:none;vertical-align:top;min-width:36px;font-size:11px}
-.code{padding:3px 12px 3px 0;white-space:pre-wrap;word-break:break-word;color:#38bdf8;line-height:1.6}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0f172a}
+  table{width:100%;border-collapse:collapse;padding:12px 0}
+  .n{color:#334155;text-align:right;padding:3px 12px 3px 10px;
+     user-select:none;vertical-align:top;min-width:38px;font-size:11px;
+     font-family:monospace;border-right:1px solid #1e293b}
+  .c{padding:3px 14px 3px 12px;white-space:pre-wrap;word-break:break-all;
+     color:#38bdf8;line-height:1.7;font-family:'Courier New',monospace;font-size:12px}
 </style></head><body>
-<table><tbody>${lines}</tbody></table>
+<table><tbody>${rows}</tbody></table>
 </body></html>`;
   }
 
+  // Plain text
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;font-size:15px;line-height:1.8;padding:20px}
-p{margin-bottom:14px}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;
+       font-size:15px;line-height:1.8;padding:20px 18px}
+  p{margin-bottom:14px}
 </style></head><body>
-<div>${esc.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>')}</div>
+<div>${esc.replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')}</div>
 </body></html>`;
 }
 
@@ -585,10 +667,7 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
   // ── Loading spinner overlay ──
   const LoadingOverlay = () => webLoading ? (
     <View style={vStyles.loadingOverlay}>
-      <View style={vStyles.loadingCard}>
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text style={vStyles.loadingText}>Loading preview…</Text>
-      </View>
+      <ActivityIndicator size="large" color="#2563eb" />
     </View>
   ) : null;
 
@@ -661,10 +740,16 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
           originWhitelist={['*']}
           source={{ html: buildPdfHtml(file.data) }}
           onLoadEnd={() => setWebLoading(false)}
+          onError={() => setWebLoading(false)}
           javaScriptEnabled
           allowFileAccess
+          allowUniversalAccessFromFileURLs
           mixedContentMode="always"
+          domStorageEnabled
+          cacheEnabled
           showsVerticalScrollIndicator={false}
+          startInLoadingState={false}
+          scalesPageToFit={Platform.OS === 'android'}
         />
         <LoadingOverlay />
       </View>
@@ -679,9 +764,15 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
         <View style={{ flex: 1 }}>
           <WebView
             style={{ flex: 1 }}
+            originWhitelist={['*']}
             source={{ html: buildOfficeViewerHtml(file.data) }}
             onLoadEnd={() => setWebLoading(false)}
+            onError={() => setWebLoading(false)}
             javaScriptEnabled
+            domStorageEnabled
+            cacheEnabled
+            showsVerticalScrollIndicator={false}
+            scalesPageToFit={Platform.OS === 'android'}
           />
           <LoadingOverlay />
         </View>
