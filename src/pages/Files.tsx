@@ -301,7 +301,7 @@ function buildTextHtml(text: string, name: string): string {
        font-size:15px;line-height:1.8;padding:20px 18px}
   p{margin-bottom:14px}
 </style></head><body>
-<div>${esc.split('\\n\\n').join('</p><p>').split('\\n').join('<br>')}</div>
+<div>${esc.split('\n\n').join('</p><p>').split('\n').join('<br>')}</div>
 </body></html>`;
 }
 
@@ -602,6 +602,9 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
 
   useEffect(() => {
     Animated.spring(slideAnim, { toValue: 1, tension: 55, friction: 9, useNativeDriver: true }).start();
+    // Reset loading state when viewer opens
+    setWebLoading(type !== 'image');
+    setImgLoaded(false);
   }, []);
 
   useEffect(() => {
@@ -661,12 +664,7 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
     </View>
   );
 
-  // ── Loading spinner overlay ──
-  const LoadingOverlay = () => webLoading ? (
-    <View style={vStyles.loadingOverlay}>
-      <ActivityIndicator size="large" color="#2563eb" />
-    </View>
-  ) : null;
+  // LoadingOverlay inlined per section for reliability
 
   const renderBody = () => {
     // IMAGE
@@ -719,12 +717,14 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
           <WebView
             style={{ flex: 1 }}
             originWhitelist={['*']}
-            source={{ html: buildTextHtml(textContent, file.name) }}
+            source={{ html: buildTextHtml(textContent || ' ', file.name) }}
             onLoadEnd={() => setWebLoading(false)}
+            onError={() => setWebLoading(false)}
             showsVerticalScrollIndicator={false}
             scrollEnabled
+            javaScriptEnabled={false}
           />
-          <LoadingOverlay />
+          {webLoading && <View style={vStyles.loadingOverlay}><ActivityIndicator size="large" color="#2563eb" /></View>}
         </View>
       );
     }
@@ -733,7 +733,7 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
     if (type === 'pdf') return (
       <View style={{ flex: 1 }}>
         <WebView
-          style={{ flex: 1 }}
+          style={{ flex: 1, backgroundColor: '#f8fafc' }}
           originWhitelist={['*']}
           source={{ html: buildPdfHtml(file.data) }}
           onLoadEnd={() => setWebLoading(false)}
@@ -743,12 +743,12 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
           allowUniversalAccessFromFileURLs
           mixedContentMode="always"
           domStorageEnabled
-          cacheEnabled
+          cacheEnabled={false}
           showsVerticalScrollIndicator={false}
-          startInLoadingState={false}
-          scalesPageToFit={Platform.OS === 'android'}
+          scrollEnabled
+          geolocationEnabled={false}
         />
-        <LoadingOverlay />
+        {webLoading && <View style={vStyles.loadingOverlay}><ActivityIndicator size="large" color="#2563eb" /></View>}
       </View>
     );
 
@@ -760,18 +760,17 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
       return (
         <View style={{ flex: 1 }}>
           <WebView
-            style={{ flex: 1 }}
+            style={{ flex: 1, backgroundColor: '#fff' }}
             originWhitelist={['*']}
             source={{ html: buildOfficeViewerHtml(file.data) }}
             onLoadEnd={() => setWebLoading(false)}
             onError={() => setWebLoading(false)}
             javaScriptEnabled
             domStorageEnabled
-            cacheEnabled
+            cacheEnabled={false}
             showsVerticalScrollIndicator={false}
-            scalesPageToFit={Platform.OS === 'android'}
           />
-          <LoadingOverlay />
+          {webLoading && <View style={vStyles.loadingOverlay}><ActivityIndicator size="large" color="#2563eb" /></View>}
         </View>
       );
     }

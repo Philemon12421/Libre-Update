@@ -194,13 +194,13 @@ function APIKeyModal({ visible, onClose }: { visible: boolean; onClose: () => vo
         <Animated.View style={[ak.sheet, { transform: [{ translateY }] }]}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              {/* Handle + close */}
-              <View style={ak.topRow}>
+              {/* Handle */}
+              <View style={{ alignItems: 'center', paddingTop: 14, marginBottom: 6 }}>
                 <View style={ak.handle} />
-                <TouchableOpacity style={ak.closeBtn} onPress={onClose}>
-                  <X size={15} color="#94a3b8" />
-                </TouchableOpacity>
               </View>
+              <TouchableOpacity style={ak.closeBtn} onPress={onClose}>
+                <X size={15} color="#94a3b8" />
+              </TouchableOpacity>
 
               {/* Title */}
               <View style={ak.titleRow}>
@@ -355,9 +355,9 @@ const ak = StyleSheet.create({
   },
 
   // ── Top bar ──
-  topRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 16, paddingHorizontal: 22, marginBottom: 0 },
-  handle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', alignSelf: 'center' },
-  closeBtn: { width: 32, height: 32, borderRadius: 10, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.07, shadowRadius: 4, elevation: 2 },
+  topRow:   { alignItems: 'center', paddingTop: 14, marginBottom: 6 },
+  handle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0' },
+  closeBtn: { position: 'absolute', top: 14, right: 20, width: 32, height: 32, borderRadius: 10, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', zIndex: 10 },
 
   // ── Title ──
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 22, paddingTop: 18, paddingBottom: 20 },
@@ -369,10 +369,8 @@ const ak = StyleSheet.create({
   providerTabs:    { paddingHorizontal: 22, gap: 8, paddingBottom: 20 },
   providerTab: {
     paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: '#f1f5f9',
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
   },
   keyDot:          { width: 7, height: 7, borderRadius: 3.5 },
   providerTabText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
@@ -400,9 +398,7 @@ const ak = StyleSheet.create({
   inputLabel:   { fontSize: 9, fontWeight: '900', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff', borderRadius: 14, overflow: 'hidden',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+    backgroundColor: '#f8fafc', borderRadius: 14,
   },
   keyInput: {
     flex: 1, fontSize: 13, color: '#1e293b', padding: 14,
@@ -413,9 +409,7 @@ const ak = StyleSheet.create({
   // ── Model picker (white) ──
   modelBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: '#fff', borderRadius: 14, padding: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 6, elevation: 2,
+    backgroundColor: '#f8fafc', borderRadius: 14, padding: 14,
   },
   modelBtnText:  { flex: 1, fontSize: 13, fontWeight: '600', color: '#1e293b' },
   modelDropdown: {
@@ -445,9 +439,7 @@ const ak = StyleSheet.create({
   summaryChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: '#fff',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    backgroundColor: '#f1f5f9',
   },
   summaryDot:      { width: 7, height: 7, borderRadius: 3.5 },
   summaryChipText: { fontSize: 12, fontWeight: '700' },
