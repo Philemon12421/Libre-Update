@@ -252,11 +252,8 @@ function buildTextHtml(text: string, name: string): string {
       .replace(/\*(.+?)\*/g,   '<em>$1</em>')
       .replace(/`(.+?)`/g,     '<code>$1</code>')
       .replace(/^- (.+)$/gm,   '<li>$1</li>')
-      .replace(/
-
-/g,        '</p><p>')
-      .replace(/
-/g,          '<br>');
+      .split('\n\n').join('</p><p>')
+      .split('\n').join('<br>');
     return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -276,7 +273,7 @@ function buildTextHtml(text: string, name: string): string {
   }
 
   if (isCode) {
-    const rows = esc.split('\n').map((l, i) =>
+    const rows = esc.split('\n').map((l: string, i: number) =>
       `<tr><td class="n">${i+1}</td><td class="c">${l||'&nbsp;'}</td></tr>`
     ).join('');
     return `<!DOCTYPE html><html><head>
@@ -304,7 +301,7 @@ function buildTextHtml(text: string, name: string): string {
        font-size:15px;line-height:1.8;padding:20px 18px}
   p{margin-bottom:14px}
 </style></head><body>
-<div>${esc.replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>')}</div>
+<div>${esc.split('\\n\\n').join('</p><p>').split('\\n').join('<br>')}</div>
 </body></html>`;
 }
 
