@@ -58,37 +58,66 @@ function matchCategory(file: LibreFile, cat: Category): boolean {
   }
 }
 
-function getPreviewType(file: LibreFile): 'image' | 'text' | 'pdf' | 'office' | 'none' {
-  const t   = file.type.toLowerCase();
+function getPreviewType(file: LibreFile): 'image' | 'text' | 'pdf' | 'office' | 'audio' | 'video' | 'none' {
+  const t   = (file.type ?? '').toLowerCase();
   const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-  if (t.includes('image') || ['jpg','jpeg','png','gif','webp','bmp','heic'].includes(ext)) return 'image';
-  if (t.includes('pdf')   || ext === 'pdf')                                                 return 'pdf';
-  if (t.includes('text')  || ['txt','md','csv','json','js','ts','html','css','xml','yaml','yml'].includes(ext)) return 'text';
-  if (['doc','docx','ppt','pptx','xls','xlsx','odt','odp','ods'].includes(ext))             return 'office';
+
+  // Images
+  if (t.startsWith('image/') || ['jpg','jpeg','png','gif','webp','bmp','heic','svg','ico','tiff','tif'].includes(ext))
+    return 'image';
+
+  // PDF
+  if (t === 'application/pdf' || ext === 'pdf') return 'pdf';
+
+  // Audio
+  if (t.startsWith('audio/') || ['mp3','wav','ogg','m4a','aac','flac','opus'].includes(ext))
+    return 'audio';
+
+  // Video
+  if (t.startsWith('video/') || ['mp4','mov','avi','mkv','webm','3gp','flv'].includes(ext))
+    return 'video';
+
+  // Office
+  if (['doc','docx','ppt','pptx','xls','xlsx','odt','odp','ods','odg'].includes(ext)
+    || t.includes('msword') || t.includes('officedocument') || t.includes('opendocument'))
+    return 'office';
+
+  // Text / code
+  if (t.startsWith('text/')
+    || ['txt','md','csv','json','js','ts','jsx','tsx','html','css','xml',
+        'yaml','yml','py','java','cpp','c','h','sh','rb','go','rs','swift',
+        'kt','php','sql','ini','toml','env','log','gitignore'].includes(ext))
+    return 'text';
+
   return 'none';
 }
 
 function getIconColor(type: string, name = '') {
   const t   = type.toLowerCase();
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  if (t.includes('pdf')          || ext === 'pdf')                               return { bg: '#fef2f2', color: '#ef4444' };
-  if (t.includes('image')        || ['jpg','jpeg','png','gif','webp'].includes(ext)) return { bg: '#ecfdf5', color: '#10b981' };
-  if (t.includes('word')         || ['doc','docx'].includes(ext))                return { bg: '#eff6ff', color: '#2563eb' };
-  if (t.includes('presentation') || ['ppt','pptx'].includes(ext))                return { bg: '#fff7ed', color: '#f97316' };
-  if (t.includes('text')         || ['txt','md'].includes(ext))                  return { bg: '#eef2ff', color: '#6366f1' };
+  if (t === 'application/pdf' || ext === 'pdf')                                          return { bg: '#fef2f2', color: '#ef4444' };
+  if (t.startsWith('image/')  || ['jpg','jpeg','png','gif','webp'].includes(ext))        return { bg: '#ecfdf5', color: '#10b981' };
+  if (t.includes('msword')    || ['doc','docx'].includes(ext))                          return { bg: '#eff6ff', color: '#2563eb' };
+  if (t.includes('presentation') || ['ppt','pptx'].includes(ext))                       return { bg: '#fff7ed', color: '#f97316' };
+  if (t.includes('sheet')     || ['xls','xlsx'].includes(ext))                          return { bg: '#f0fdf4', color: '#16a34a' };
+  if (t.startsWith('audio/')  || ['mp3','wav','ogg','m4a'].includes(ext))               return { bg: '#fdf4ff', color: '#a21caf' };
+  if (t.startsWith('video/')  || ['mp4','mov','avi','mkv'].includes(ext))               return { bg: '#eff6ff', color: '#2563eb' };
+  if (t.startsWith('text/')   || ['txt','md'].includes(ext))                            return { bg: '#eef2ff', color: '#6366f1' };
   return { bg: '#f8fafc', color: '#94a3b8' };
 }
 
 function getIcon(type: string, size = 18, name = '') {
   const t   = type.toLowerCase();
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  if (t.includes('pdf')          || ext === 'pdf')                               return <FileText  color="#ef4444" size={size} />;
-  if (t.includes('image')        || ['jpg','jpeg','png','gif','webp'].includes(ext)) return <ImageIcon color="#10b981" size={size} />;
-  if (t.includes('text')         || ['txt','md'].includes(ext))                  return <BookOpen  color="#6366f1" size={size} />;
-  if (t.includes('word')         || ['doc','docx'].includes(ext))                return <FileText  color="#2563eb" size={size} />;
-  if (t.includes('sheet')        || ['xls','xlsx'].includes(ext))                return <Layout    color="#10b981" size={size} />;
-  if (t.includes('presentation') || ['ppt','pptx'].includes(ext))                return <Layout    color="#f97316" size={size} />;
-  if (t.includes('json')         || t.includes('code'))                          return <FileCode  color="#f59e0b" size={size} />;
+  if (t === 'application/pdf' || ext === 'pdf')                                    return <FileText  color="#ef4444" size={size} />;
+  if (t.startsWith('image/')  || ['jpg','jpeg','png','gif','webp'].includes(ext))  return <ImageIcon color="#10b981" size={size} />;
+  if (t.startsWith('audio/')  || ['mp3','wav','m4a'].includes(ext))               return <BookOpen  color="#a21caf" size={size} />;
+  if (t.startsWith('video/')  || ['mp4','mov','mkv'].includes(ext))               return <Layout    color="#2563eb" size={size} />;
+  if (['doc','docx'].includes(ext) || t.includes('msword'))                        return <FileText  color="#2563eb" size={size} />;
+  if (['xls','xlsx'].includes(ext) || t.includes('sheet'))                         return <Layout    color="#16a34a" size={size} />;
+  if (['ppt','pptx'].includes(ext) || t.includes('presentation'))                  return <Layout    color="#f97316" size={size} />;
+  if (['json','js','ts','tsx','jsx'].includes(ext))                                return <FileCode  color="#f59e0b" size={size} />;
+  if (t.startsWith('text/') || ['txt','md','csv'].includes(ext))                   return <BookOpen  color="#6366f1" size={size} />;
   return <File color="#94a3b8" size={size} />;
 }
 
@@ -99,159 +128,210 @@ function formatSize(bytes: number) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-// ── HTML builders ──────────────────────────────────────────────────────────
+// ── HTML Builders — Google Drive style previews ──────────────────────────
+
+// Shared spinner CSS
+const SPINNER_CSS = `
+  .spin-wrap{position:fixed;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;background:#fff;
+    font-family:-apple-system,sans-serif;gap:16px;
+    transition:opacity .3s;z-index:99}
+  .ring{width:40px;height:40px;border:3px solid #f1f5f9;
+    border-top-color:#2563eb;border-radius:50%;
+    animation:spin .8s linear infinite}
+  .spin-label{font-size:13px;color:#64748b;font-weight:600}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .err{position:fixed;inset:0;display:none;flex-direction:column;
+    align-items:center;justify-content:center;background:#fff;
+    font-family:-apple-system,sans-serif;gap:12px;padding:32px;text-align:center}
+  .err-icon{font-size:40px}
+  .err-title{font-size:16px;font-weight:800;color:#1e293b}
+  .err-msg{font-size:12px;color:#94a3b8;line-height:1.7;max-width:280px}
+`;
 
 function buildPdfHtml(uri: string): string {
   const isRemote = uri.startsWith('http');
 
+  // For remote PDFs use Google Docs viewer (most reliable)
   if (isRemote) {
-    // Remote PDF: use Google Docs viewer iframe — fastest, no JS required
-    const gdocsUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(uri)}&embedded=true`;
+    const gdUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(uri)}&embedded=true`;
     return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff}
-  iframe{width:100vw;height:100vh;border:none;display:block}
-  #loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;
-    justify-content:center;background:#fff;font-family:sans-serif;gap:14px;color:#64748b;font-size:13px}
-  .ring{width:36px;height:36px;border:3px solid #f1f5f9;border-top-color:#2563eb;
-    border-radius:50%;animation:spin 0.8s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
+  body,html{width:100%;height:100%;overflow:hidden;background:#525659}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:none}
+  ${SPINNER_CSS}
 </style></head><body>
-<div id="loader"><div class="ring"></div>Loading PDF…</div>
-<iframe src="${gdocsUrl}"
-  onload="document.getElementById('loader').style.display='none'"
-  onerror="document.getElementById('loader').innerHTML='<div style=color:#ef4444>Could not load PDF.<br>Try opening with an external app.</div>'">
+<div class="spin-wrap" id="sp"><div class="ring"></div><div class="spin-label">Loading PDF…</div></div>
+<div class="err" id="er"><div class="err-icon">📄</div><div class="err-title">Preview unavailable</div><div class="err-msg">This PDF cannot be previewed inline. Open it with a PDF reader app.</div></div>
+<iframe src="${gdUrl}"
+  onload="document.getElementById('sp').style.opacity='0';setTimeout(()=>document.getElementById('sp').style.display='none',300)"
+  onerror="document.getElementById('sp').style.display='none';document.getElementById('er').style.display='flex'">
 </iframe>
 </body></html>`;
   }
 
-  // Local PDF: render with pdf.js — clean, page-by-page
+  // Local PDF — pdf.js with clean Google Drive-like UI
   return `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=2">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=3,user-scalable=yes">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#f8fafc;font-family:-apple-system,sans-serif}
-  #bar{position:sticky;top:0;z-index:9;background:#fff;
-       display:flex;align-items:center;gap:8px;padding:10px 14px;
-       border-bottom:1px solid #f1f5f9;
-       box-shadow:0 1px 8px rgba(0,0,0,0.06)}
-  .info{flex:1;text-align:center;font-size:12px;color:#64748b;font-weight:600}
-  .info b{color:#1e293b}
-  .btn{background:#f8fafc;border:none;border-radius:9px;padding:7px 14px;
-       font-size:12px;font-weight:700;color:#2563eb;cursor:pointer;transition:.15s}
-  .btn:active{background:#eff6ff}
-  #pages{display:flex;flex-direction:column;align-items:center;padding:16px 12px;gap:16px}
-  canvas{border-radius:8px;box-shadow:0 2px 16px rgba(0,0,0,0.1);max-width:100%;background:#fff}
-  #loading{display:flex;flex-direction:column;align-items:center;
-    justify-content:center;min-height:70vh;gap:14px;color:#64748b;font-size:13px}
-  .ring{width:36px;height:36px;border:3px solid #f1f5f9;border-top-color:#2563eb;
-    border-radius:50%;animation:spin 0.8s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  #err{padding:32px;text-align:center;color:#ef4444;font-size:13px;
-       line-height:1.7;display:none}
+  body{background:#525659;font-family:-apple-system,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+  #toolbar{
+    display:flex;align-items:center;gap:10px;
+    padding:0 14px;height:48px;min-height:48px;
+    background:#3c4043;color:#fff;
+    box-shadow:0 2px 8px rgba(0,0,0,0.3);
+    position:relative;z-index:10;flex-shrink:0
+  }
+  .t-btn{
+    background:transparent;border:none;color:#bdc1c6;
+    padding:6px 10px;border-radius:6px;font-size:13px;
+    cursor:pointer;font-weight:600;transition:.15s;min-width:36px
+  }
+  .t-btn:hover{background:rgba(255,255,255,0.1);color:#fff}
+  .t-btn:active{background:rgba(255,255,255,0.2)}
+  .t-btn:disabled{opacity:0.35;cursor:default}
+  .t-sep{width:1px;height:20px;background:rgba(255,255,255,0.15);margin:0 4px}
+  #pg-info{font-size:12px;color:#bdc1c6;font-weight:600;min-width:70px;text-align:center}
+  #pg-inp{
+    width:40px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
+    border-radius:4px;color:#fff;text-align:center;padding:3px;font-size:12px
+  }
+  .of{color:rgba(255,255,255,0.5);font-size:11px}
+  #zoom-label{font-size:11px;color:#bdc1c6;min-width:38px;text-align:center}
+  #scroll{flex:1;overflow-y:auto;overflow-x:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
+  canvas{
+    display:block;background:#fff;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4);
+    border-radius:2px;max-width:100%
+  }
+  ${SPINNER_CSS}
+  .err{z-index:100}
 </style></head><body>
-<div id="bar">
-  <button class="btn" onclick="prev()">‹</button>
-  <div class="info">Page <b id="pn">–</b> of <b id="pc">–</b></div>
-  <button class="btn" onclick="next()">›</button>
-  <button class="btn" onclick="zIn()">＋</button>
-  <button class="btn" onclick="zOut()">－</button>
+<div class="spin-wrap" id="sp"><div class="ring"></div><div class="spin-label">Loading PDF…</div></div>
+<div class="err" id="er" style="z-index:100"><div class="err-icon">📄</div><div class="err-title">Cannot load PDF</div><div class="err-msg" id="er-msg">An error occurred.</div></div>
+
+<div id="toolbar">
+  <button class="t-btn" id="btn-prev" onclick="go(-1)" disabled title="Previous page">‹</button>
+  <input id="pg-inp" type="number" min="1" value="1" onchange="jumpTo(this.value)" />
+  <span class="of">/ <span id="pc">–</span></span>
+  <button class="t-btn" id="btn-next" onclick="go(1)" disabled title="Next page">›</button>
+  <div class="t-sep"></div>
+  <button class="t-btn" onclick="zoom(-0.15)" title="Zoom out">−</button>
+  <span id="zoom-label">100%</span>
+  <button class="t-btn" onclick="zoom(0.15)" title="Zoom in">+</button>
+  <button class="t-btn" onclick="fitWidth()" title="Fit to width">⟺</button>
 </div>
-<div id="loading"><div class="ring"></div>Loading PDF…</div>
-<div id="pages" style="display:none"></div>
-<div id="err"></div>
+<div id="scroll"></div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-var pdf,pg=1,sc=1.3,busy=false;
-var pages=document.getElementById('pages');
-var loading=document.getElementById('loading');
-var err=document.getElementById('err');
+var pdf=null,pg=1,sc=1.0,busy=false,VW=window.innerWidth-32;
+var scroll=document.getElementById('scroll');
+
+function hide(id){document.getElementById(id).style.display='none'}
+function show(id){document.getElementById(id).style.display='flex'}
+function setText(id,v){document.getElementById(id).textContent=v}
 
 function showErr(m){
-  loading.style.display='none';
-  err.style.display='block';
-  err.innerHTML='<b>Cannot load PDF</b><br>'+m+'<br><br><span style="color:#94a3b8;font-size:11px">Try sharing the file to open in a PDF viewer app.</span>';
+  hide('sp');
+  setText('er-msg',m+' — try opening with a PDF reader app.');
+  show('er');
 }
 
-pdfjsLib.getDocument({url:'${uri}'}).promise.then(function(d){
+function updateBtns(){
+  document.getElementById('btn-prev').disabled=pg<=1;
+  document.getElementById('btn-next').disabled=!pdf||pg>=pdf.numPages;
+  document.getElementById('pg-inp').value=pg;
+  setText('zoom-label',Math.round(sc*100)+'%');
+}
+
+async function renderPage(n){
+  if(busy||!pdf)return;
+  busy=true;pg=n;
+  try{
+    var page=await pdf.getPage(n);
+    var vp=page.getViewport({scale:sc});
+    scroll.innerHTML='';
+    var canvas=document.createElement('canvas');
+    var ctx=canvas.getContext('2d');
+    canvas.width=vp.width;canvas.height=vp.height;
+    scroll.appendChild(canvas);
+    await page.render({canvasContext:ctx,viewport:vp}).promise;
+    scroll.scrollTop=0;
+    updateBtns();
+  }catch(e){showErr(e.message);}
+  busy=false;
+}
+
+function go(d){if(!busy&&pdf){var n=pg+d;if(n>=1&&n<=pdf.numPages)renderPage(n);}}
+function jumpTo(v){var n=parseInt(v);if(n>=1&&pdf&&n<=pdf.numPages)renderPage(n);}
+function zoom(d){sc=Math.min(Math.max(sc+d,0.4),3.5);renderPage(pg);}
+function fitWidth(){
+  if(!pdf)return;
+  pdf.getPage(pg).then(function(p){
+    var vp=p.getViewport({scale:1});
+    sc=VW/vp.width;renderPage(pg);
+  });
+}
+
+pdfjsLib.getDocument({url:'${uri}',verbosity:0}).promise.then(function(d){
   pdf=d;
-  document.getElementById('pc').textContent=d.numPages;
-  loading.style.display='none';
-  pages.style.display='flex';
-  render(1);
+  setText('pc',d.numPages);
+  hide('sp');
+  fitWidth();
 }).catch(function(e){showErr(e.message);});
 
-function render(n){
-  if(busy||!pdf)return;busy=true;pg=n;
-  pdf.getPage(n).then(function(p){
-    var vp=p.getViewport({scale:sc});
-    pages.innerHTML='';
-    var c=document.createElement('canvas');
-    c.width=vp.width;c.height=vp.height;
-    pages.appendChild(c);
-    p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise.then(function(){
-      document.getElementById('pn').textContent=n;
-      busy=false;
-      window.scrollTo({top:0,behavior:'smooth'});
-    });
-  }).catch(function(e){showErr(e.message);busy=false;});
-}
-function prev(){if(pg>1)render(pg-1);}
-function next(){if(pdf&&pg<pdf.numPages)render(pg+1);}
-function zIn(){sc=Math.min(sc+0.2,3);render(pg);}
-function zOut(){sc=Math.max(sc-0.2,0.5);render(pg);}
+window.addEventListener('resize',function(){VW=window.innerWidth-32;});
 </script></body></html>`;
 }
 
-
 function buildOfficeViewerHtml(uri: string): string {
+  // Microsoft Office Online handles Word, Excel, PowerPoint
   const msUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(uri)}`;
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff}
-  iframe{width:100vw;height:100vh;border:none;display:block}
-  #loader{position:fixed;inset:0;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;background:#fff;
-    font-family:sans-serif;gap:14px;color:#64748b;font-size:13px}
-  .ring{width:36px;height:36px;border:3px solid #f1f5f9;border-top-color:#2563eb;
-    border-radius:50%;animation:spin 0.8s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
+  html,body{width:100%;height:100%;overflow:hidden;background:#fff}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:none}
+  ${SPINNER_CSS}
 </style></head><body>
-<div id="loader"><div class="ring"></div>Loading document…</div>
+<div class="spin-wrap" id="sp"><div class="ring"></div><div class="spin-label">Loading document…</div></div>
+<div class="err" id="er"><div class="err-icon">📄</div><div class="err-title">Preview unavailable</div><div class="err-msg">Office preview requires a public URL. Tap Share to open with a compatible app.</div></div>
 <iframe src="${msUrl}"
-  onload="document.getElementById('loader').style.display='none'"
-  onerror="document.getElementById('loader').innerHTML='<div style=color:#ef4444>Cannot preview. Open with an external app.</div>'">
+  onload="document.getElementById('sp').style.opacity='0';setTimeout(()=>document.getElementById('sp').style.display='none',300)"
+  onerror="document.getElementById('sp').style.display='none';document.getElementById('er').style.display='flex'">
 </iframe>
 </body></html>`;
 }
 
-
 function buildTextHtml(text: string, name: string): string {
   const ext    = name.split('.').pop()?.toLowerCase() ?? '';
-  const isCode = ['js','ts','jsx','tsx','html','css','json','xml','yaml','yml',
-                  'py','java','cpp','c','sh','php','rb','go','rs','swift'].includes(ext);
+  const isCode = ['js','ts','jsx','tsx','html','htm','css','json','xml','yaml','yml',
+                  'py','java','cpp','c','h','sh','rb','go','rs','swift','kt','php',
+                  'sql','ini','toml','env','log','gitignore','csv'].includes(ext);
   const isMd   = ext === 'md';
-  const esc    = text
+
+  const esc = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
   if (isMd) {
-    // Clean markdown-style rendering
     const html = esc
-      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^## (.+)$/gm,  '<h2>$1</h2>')
-      .replace(/^# (.+)$/gm,   '<h1>$1</h1>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g,   '<em>$1</em>')
-      .replace(/`(.+?)`/g,     '<code>$1</code>')
-      .replace(/^- (.+)$/gm,   '<li>$1</li>')
+      .replace(/^### (.+)$/gm,    '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm,     '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm,      '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/gm, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/gm,     '<em>$1</em>')
+      .replace(/`(.+?)`/gm,       '<code>$1</code>')
+      .replace(/^- (.+)$/gm,      '<li>$1</li>')
+      .replace(/^> (.+)$/gm,      '<blockquote>$1</blockquote>')
       .split('\n\n').join('</p><p>')
       .split('\n').join('<br>');
     return `<!DOCTYPE html><html><head>
@@ -259,51 +339,110 @@ function buildTextHtml(text: string, name: string): string {
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
   body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;
-       font-size:15px;line-height:1.8;padding:20px 18px;max-width:720px;margin:0 auto}
-  h1{font-size:22px;font-weight:900;margin:20px 0 10px;color:#0f172a}
-  h2{font-size:18px;font-weight:800;margin:16px 0 8px;color:#0f172a}
-  h3{font-size:15px;font-weight:700;margin:14px 0 6px;color:#1e293b}
-  p{margin-bottom:12px}
-  li{margin-left:20px;margin-bottom:6px}
-  strong{font-weight:700}
+    font-size:15px;line-height:1.8;padding:24px 18px;max-width:720px;margin:0 auto}
+  h1{font-size:24px;font-weight:900;margin:0 0 12px;color:#0f172a;border-bottom:2px solid #f1f5f9;padding-bottom:10px}
+  h2{font-size:19px;font-weight:800;margin:20px 0 8px;color:#0f172a}
+  h3{font-size:16px;font-weight:700;margin:16px 0 6px;color:#1e293b}
+  p{margin-bottom:14px}
+  li{margin-left:22px;margin-bottom:6px}
+  strong{font-weight:700;color:#0f172a}
   em{font-style:italic;color:#475569}
-  code{background:#f1f5f9;padding:2px 6px;border-radius:5px;
-       font-family:monospace;font-size:13px;color:#7c3aed}
+  code{background:#f1f5f9;padding:2px 7px;border-radius:5px;
+    font-family:'Courier New',monospace;font-size:13px;color:#7c3aed}
+  blockquote{border-left:4px solid #e2e8f0;padding:8px 16px;
+    color:#64748b;margin:12px 0;font-style:italic;background:#f8fafc;border-radius:0 8px 8px 0}
 </style></head><body><p>${html}</p></body></html>`;
   }
 
   if (isCode) {
     const rows = esc.split('\n').map((l: string, i: number) =>
-      `<tr><td class="n">${i+1}</td><td class="c">${l||'&nbsp;'}</td></tr>`
+      `<tr><td class="ln">${i+1}</td><td class="cd">${l || '&nbsp;'}</td></tr>`
     ).join('');
     return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#0f172a}
-  table{width:100%;border-collapse:collapse;padding:12px 0}
-  .n{color:#334155;text-align:right;padding:3px 12px 3px 10px;
-     user-select:none;vertical-align:top;min-width:38px;font-size:11px;
-     font-family:monospace;border-right:1px solid #1e293b}
-  .c{padding:3px 14px 3px 12px;white-space:pre-wrap;word-break:break-all;
-     color:#38bdf8;line-height:1.7;font-family:'Courier New',monospace;font-size:12px}
+  html,body{background:#0f172a;height:100%}
+  table{width:100%;border-collapse:collapse;padding:8px 0}
+  .ln{
+    color:#4b5563;text-align:right;
+    padding:2px 14px 2px 10px;
+    user-select:none;vertical-align:top;
+    font-size:12px;font-family:'Courier New',monospace;
+    line-height:1.7;min-width:42px;
+    border-right:1px solid #1e293b;
+    position:sticky;left:0;background:#0f172a
+  }
+  .cd{
+    padding:2px 16px 2px 14px;
+    white-space:pre;
+    color:#38bdf8;
+    font-size:13px;font-family:'Courier New',monospace;
+    line-height:1.7;vertical-align:top
+  }
 </style></head><body>
 <table><tbody>${rows}</tbody></table>
 </body></html>`;
   }
 
   // Plain text
+  const paragraphs = esc.split('\n\n').join('</p><p>');
+  const lines = paragraphs.split('\n').join('<br>');
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;
-       font-size:15px;line-height:1.8;padding:20px 18px}
+  body{background:#fff;color:#1e293b;
+    font-family:-apple-system,system-ui,sans-serif;
+    font-size:15px;line-height:1.8;padding:24px 18px}
   p{margin-bottom:14px}
+</style></head><body><p>${lines}</p></body></html>`;
+}
+
+function buildAudioHtml(uri: string, name: string): string {
+  return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#fdf4ff;display:flex;align-items:center;
+    justify-content:center;height:100vh;font-family:-apple-system,sans-serif}
+  .card{background:#fff;border-radius:24px;padding:32px 28px;
+    box-shadow:0 8px 32px rgba(162,28,175,0.12);
+    display:flex;flex-direction:column;align-items:center;
+    gap:20px;max-width:320px;width:90%}
+  .icon{font-size:52px}
+  .title{font-size:14px;font-weight:700;color:#1e293b;
+    text-align:center;word-break:break-all;max-width:100%}
+  audio{width:100%;border-radius:12px;outline:none}
+  audio::-webkit-media-controls-panel{background:#fdf4ff}
 </style></head><body>
-<div>${esc.split('\n\n').join('</p><p>').split('\n').join('<br>')}</div>
+<div class="card">
+  <div class="icon">🎵</div>
+  <div class="title">${name.replace(/</g,'&lt;')}</div>
+  <audio controls autoplay src="${uri}">
+    Your browser does not support audio playback.
+  </audio>
+</div>
 </body></html>`;
 }
+
+function buildVideoHtml(uri: string, name: string): string {
+  return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#000;display:flex;align-items:center;
+    justify-content:center;height:100vh}
+  video{max-width:100%;max-height:100vh;width:100%;
+    object-fit:contain;outline:none}
+</style></head><body>
+<video controls autoplay playsinline
+  src="${uri}"
+  onerror="document.body.innerHTML='<div style=color:#fff;text-align:center;padding:40px;font-family:sans-serif><div style=font-size:36px>🎬</div><p style=margin-top:16px;color:#94a3b8>${name.replace(/</g,'&lt;')} could not be played.</p></div>'">
+</video>
+</body></html>`;
+}
+
 
 
 // ── AI Chat Panel ──────────────────────────────────────────────────────────
@@ -667,116 +806,139 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
   // LoadingOverlay inlined per section for reliability
 
   const renderBody = () => {
-    // IMAGE
-    if (type === 'image') return (
-      <View style={vStyles.imageBg}>
-        <Image
-          source={{ uri: file.data }}
-          style={vStyles.imageFile}
-          resizeMode="contain"
-          onLoad={() => setImgLoaded(true)}
-        />
-        {!imgLoaded && (
-          <View style={vStyles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#fff" />
-          </View>
-        )}
+    const Spinner = () => (
+      <View style={vStyles.loadingOverlay}>
+        <ActivityIndicator size="large" color="#2563eb" />
       </View>
     );
 
-    // TEXT / CODE
+    if (type === 'image') return (
+      <View style={{ flex: 1, backgroundColor: '#111' }}>
+        <Image source={{ uri: file.data }} style={{ flex: 1, width: '100%' }}
+          resizeMode="contain"
+          onLoad={() => setImgLoaded(true)}
+          onError={() => setImgLoaded(true)} />
+        {!imgLoaded && <Spinner />}
+      </View>
+    );
+
     if (type === 'text') {
       if (isEditing) return (
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
+        <KeyboardAvoidingView style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 110 : 60}
-        >
-          <ScrollView
-            style={vStyles.editorScroll}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 110 : 60}>
+          <ScrollView style={vStyles.editorScroll}
             contentContainerStyle={{ flexGrow: 1 }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="none"
-          >
-            <TextInput
-              style={vStyles.editorInput}
-              value={editedText}
-              onChangeText={setEditedText}
-              multiline
-              autoFocus
-              textAlignVertical="top"
-              scrollEnabled={false}
-              placeholder="Start typing…"
-              placeholderTextColor="#cbd5e1"
-            />
+            keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
+            <TextInput style={vStyles.editorInput} value={editedText}
+              onChangeText={setEditedText} multiline autoFocus
+              textAlignVertical="top" scrollEnabled={false}
+              placeholder="Start typing…" placeholderTextColor="#cbd5e1" />
           </ScrollView>
         </KeyboardAvoidingView>
       );
       return (
         <View style={{ flex: 1 }}>
-          <WebView
-            style={{ flex: 1 }}
-            originWhitelist={['*']}
+          <WebView style={{ flex: 1 }} originWhitelist={['*']}
             source={{ html: buildTextHtml(textContent || ' ', file.name) }}
             onLoadEnd={() => setWebLoading(false)}
             onError={() => setWebLoading(false)}
             showsVerticalScrollIndicator={false}
-            scrollEnabled
-            javaScriptEnabled={false}
-          />
-          {webLoading && <View style={vStyles.loadingOverlay}><ActivityIndicator size="large" color="#2563eb" /></View>}
+            javaScriptEnabled={false} scrollEnabled />
+          {webLoading && <Spinner />}
         </View>
       );
     }
 
-    // PDF
     if (type === 'pdf') return (
       <View style={{ flex: 1 }}>
-        <WebView
-          style={{ flex: 1, backgroundColor: '#f8fafc' }}
+        <WebView style={{ flex: 1, backgroundColor: '#525659' }}
           originWhitelist={['*']}
           source={{ html: buildPdfHtml(file.data) }}
           onLoadEnd={() => setWebLoading(false)}
           onError={() => setWebLoading(false)}
-          javaScriptEnabled
-          allowFileAccess
+          javaScriptEnabled allowFileAccess
           allowUniversalAccessFromFileURLs
-          mixedContentMode="always"
-          domStorageEnabled
-          cacheEnabled={false}
-          showsVerticalScrollIndicator={false}
-          scrollEnabled
-          geolocationEnabled={false}
-        />
-        {webLoading && <View style={vStyles.loadingOverlay}><ActivityIndicator size="large" color="#2563eb" /></View>}
+          mixedContentMode="always" domStorageEnabled
+          cacheEnabled={false} showsVerticalScrollIndicator={false} scrollEnabled />
+        {webLoading && <Spinner />}
       </View>
     );
 
-    // OFFICE
     if (type === 'office') {
       if (isLocal) return (
-        <FallbackCard label="Office files can only be previewed via a public URL. Tap below to open in a compatible app on your device." />
+        <View style={vStyles.fallback}>
+          <View style={[vStyles.fallbackIcon, { backgroundColor: ic.bg }]}>
+            {getIcon(file.type, 52, file.name)}
+          </View>
+          <Text style={vStyles.fallbackName}>{file.name}</Text>
+          <Text style={vStyles.fallbackSub}>
+            {"Office files can only be previewed via a public URL.\nTap below to open with a compatible app."}
+          </Text>
+          <TouchableOpacity style={[vStyles.openBtn, { backgroundColor: ic.color }]}
+            onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
+            <ExternalLink size={15} color="#fff" />
+            <Text style={vStyles.openBtnText}>Open with App</Text>
+          </TouchableOpacity>
+        </View>
       );
       return (
         <View style={{ flex: 1 }}>
-          <WebView
-            style={{ flex: 1, backgroundColor: '#fff' }}
+          <WebView style={{ flex: 1, backgroundColor: '#fff' }}
             originWhitelist={['*']}
             source={{ html: buildOfficeViewerHtml(file.data) }}
             onLoadEnd={() => setWebLoading(false)}
             onError={() => setWebLoading(false)}
-            javaScriptEnabled
-            domStorageEnabled
-            cacheEnabled={false}
-            showsVerticalScrollIndicator={false}
-          />
-          {webLoading && <View style={vStyles.loadingOverlay}><ActivityIndicator size="large" color="#2563eb" /></View>}
+            javaScriptEnabled domStorageEnabled cacheEnabled={false}
+            showsVerticalScrollIndicator={false} />
+          {webLoading && <Spinner />}
         </View>
       );
     }
 
-    return <FallbackCard label="No preview available for this file type." />;
+    if (type === 'audio') return (
+      <View style={{ flex: 1 }}>
+        <WebView style={{ flex: 1 }} originWhitelist={['*']}
+          source={{ html: buildAudioHtml(file.data, file.name) }}
+          onLoadEnd={() => setWebLoading(false)}
+          onError={() => setWebLoading(false)}
+          javaScriptEnabled={false} allowFileAccess
+          allowUniversalAccessFromFileURLs mixedContentMode="always" />
+        {webLoading && <Spinner />}
+      </View>
+    );
+
+    if (type === 'video') return (
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <WebView style={{ flex: 1 }} originWhitelist={['*']}
+          source={{ html: buildVideoHtml(file.data, file.name) }}
+          onLoadEnd={() => setWebLoading(false)}
+          onError={() => setWebLoading(false)}
+          javaScriptEnabled={false} allowFileAccess
+          allowUniversalAccessFromFileURLs mixedContentMode="always"
+          allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} />
+        {webLoading && <Spinner />}
+      </View>
+    );
+
+    return (
+      <View style={vStyles.fallback}>
+        <View style={[vStyles.fallbackIcon, { backgroundColor: ic.bg }]}>
+          {getIcon(file.type, 52, file.name)}
+        </View>
+        <Text style={vStyles.fallbackName}>{file.name}</Text>
+        <Text style={vStyles.fallbackSub}>
+          {"No preview available for this file type.\nTap below to open with a compatible app."}
+        </Text>
+        <TouchableOpacity style={[vStyles.openBtn, { backgroundColor: ic.color }]}
+          onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
+          <ExternalLink size={15} color="#fff" />
+          <Text style={vStyles.openBtnText}>Open with App</Text>
+        </TouchableOpacity>
+      </View>
+    );
   };
+
 
   return (
     <Animated.View style={[vStyles.container, { transform: [{ translateY }] }]}>
