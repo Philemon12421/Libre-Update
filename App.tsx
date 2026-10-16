@@ -20,6 +20,7 @@ import AboutPage    from './src/pages/About';
 import ToolsPage    from './src/pages/Tools';
 import AIChatPage   from './src/pages/AIChat';
 import Logo         from './src/components/Logo';
+import Raised, { THEME3D } from './src/components/Raised';
 import SplashScreen     from './src/SplashScreen';
 import OnboardingScreen from './src/OnboardingScreen';
 
@@ -106,9 +107,9 @@ export default function App() {
         {/* ── Page content ─────────────────────────────────────── */}
         <View style={styles.main}>{renderPage()}</View>
 
-        {/* ── Bottom nav ───────────────────────────────────────── */}
+        {/* ── Bottom nav (floating 3D bar) ─────────────────────── */}
         <View style={styles.navWrapper}>
-          <BlurView intensity={70} tint="light" style={styles.navBar}>
+          <Raised radius={26} depth={5} style={styles.navOuter} faceStyle={styles.navFace} glowOpacity={0.2}>
             {MAIN_NAV.map(item => {
               const Icon = item.icon;
               const isActive = currentPage === item.id;
@@ -119,19 +120,35 @@ export default function App() {
                   style={styles.navItem}
                   activeOpacity={0.7}
                 >
-                  <View style={[styles.navIconBox, isActive && styles.navIconBoxActive]}>
-                    <Icon size={21} color={isActive ? '#2563eb' : '#64748b'} strokeWidth={isActive ? 2.5 : 1.8} />
-                  </View>
+                  {isActive ? (
+                    <Raised
+                      radius={13} depth={3}
+                      face={THEME3D.skyTint.face} edge={THEME3D.skyTint.edge} glow={THEME3D.skyTint.glow}
+                      faceStyle={styles.navIconBox}
+                    >
+                      <Icon size={21} color="#2563eb" strokeWidth={2.5} />
+                    </Raised>
+                  ) : (
+                    <View style={[styles.navIconBox, { marginBottom: 3 }]}>
+                      <Icon size={21} color="#64748b" strokeWidth={1.8} />
+                    </View>
+                  )}
                   <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>{item.label}</Text>
                 </TouchableOpacity>
               );
             })}
-            <View style={{ width: 62 }} />
-          </BlurView>
+            <View style={{ width: 66 }} />
+          </Raised>
 
-          <TouchableOpacity style={styles.fab} onPress={() => setMoreOpen(true)} activeOpacity={0.85}>
-            <Plus size={26} color="#fff" strokeWidth={2.5} />
-          </TouchableOpacity>
+          <Raised
+            onPress={() => setMoreOpen(true)}
+            radius={28} depth={5}
+            face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow} glowOpacity={0.4}
+            style={styles.fab}
+            faceStyle={styles.fabFace}
+          >
+            <Plus size={26} color="#fff" strokeWidth={2.75} />
+          </Raised>
         </View>
 
         {/* ── More sheet ───────────────────────────────────────── */}
@@ -146,13 +163,16 @@ export default function App() {
                   const Icon = item.icon;
                   const isActive = currentPage === item.id;
                   return (
-                    <TouchableOpacity
+                    <Raised
                       key={item.id}
-                      style={[styles.sheetItem, isActive && styles.sheetItemActive]}
                       onPress={() => handleMoreNav(item.id)}
-                      activeOpacity={0.7}
+                      radius={18} depth={4}
+                      face={isActive ? THEME3D.skyTint.face : '#ffffff'}
+                      edge={isActive ? THEME3D.skyTint.edge : THEME3D.white.edge}
+                      style={{ marginBottom: 12 }}
+                      faceStyle={styles.sheetItem}
                     >
-                      <View style={[styles.sheetIconBox, isActive && { backgroundColor: '#eff6ff' }]}>
+                      <View style={[styles.sheetIconBox, isActive && { backgroundColor: '#dbeafe' }]}>
                         <Icon size={20} color={isActive ? '#2563eb' : '#64748b'} strokeWidth={2} />
                       </View>
                       <View style={{ flex: 1 }}>
@@ -160,7 +180,7 @@ export default function App() {
                         <Text style={styles.sheetItemDesc}>{item.desc}</Text>
                       </View>
                       {isActive && <View style={styles.activeDot} />}
-                    </TouchableOpacity>
+                    </Raised>
                   );
                 })}
 
@@ -186,11 +206,11 @@ const styles = StyleSheet.create({
     paddingTop: RNStatusBar.currentHeight ? RNStatusBar.currentHeight + 8 : 16,
     paddingBottom: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowColor: '#475569',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
   },
   logoRow:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
   appName:  { fontSize: 17, fontWeight: '900', color: '#0f172a', letterSpacing: 1 },
@@ -203,28 +223,17 @@ const styles = StyleSheet.create({
 
   main: { flex: 1 },
 
-  navWrapper: { position: 'relative' },
-  navBar: {
-    flexDirection: 'row', height: 76,
-    borderTopWidth: 1, borderTopColor: 'rgba(241,245,249,0.9)',
-    paddingBottom: Platform.OS === 'ios' ? 14 : 8,
-    paddingHorizontal: 4, alignItems: 'center', overflow: 'hidden',
-  },
+  navWrapper: { position: 'relative', paddingTop: 6 },
+  navOuter: { marginHorizontal: 14, marginBottom: 10 },
+  navFace:  { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 8 },
   navItem:          { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6 },
-  navIconBox:       { width: 44, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  navIconBoxActive: { backgroundColor: '#eff6ff' },
+  navIconBox:       { width: 46, height: 34, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  navIconBoxActive: {},
   navLabel:         { fontSize: 10, fontWeight: '700', color: '#94a3b8', marginTop: 3, letterSpacing: 0.3 },
   navLabelActive:   { color: '#2563eb' },
 
-  fab: {
-    position: 'absolute', right: 14, bottom: 14,
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: '#2563eb',
-    alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#2563eb', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.45, shadowRadius: 14, elevation: 10,
-  },
-
+  fab: { position: 'absolute', right: 24, bottom: 22 },
+  fabFace: { width: 56, height: 56, alignItems: 'center', justifyContent: 'center' },
   backdrop:     { flex: 1, justifyContent: 'flex-end' },
   backdropBlur: { flex: 1, justifyContent: 'flex-end' },
   sheet: {
@@ -242,11 +251,7 @@ const styles = StyleSheet.create({
     fontSize: 11, fontWeight: '900', color: '#94a3b8',
     letterSpacing: 2, textTransform: 'uppercase', marginBottom: 16,
   },
-  sheetItem: {
-    flexDirection: 'row', alignItems: 'center', gap: 14,
-    paddingVertical: 14, paddingHorizontal: 4,
-    borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
-  },
+  sheetItem: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 14 },
   sheetItemActive:  { backgroundColor: '#fafcff' },
   sheetIconBox: {
     width: 44, height: 44, borderRadius: 14,
