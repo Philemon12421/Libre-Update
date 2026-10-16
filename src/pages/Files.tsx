@@ -17,6 +17,8 @@ import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { db, LibreFile, LibreFolder } from '../lib/db';
 import { format } from 'date-fns';
+import Raised, { THEME3D, shade } from '../components/Raised';
+
 
 type SortOption  = 'newest' | 'oldest' | 'name-asc' | 'name-desc';
 type Category    = 'all' | 'pdf' | 'word' | 'ppt' | 'txt' | 'image' | 'dirs' | 'favorites' | 'others';
@@ -1095,11 +1097,13 @@ function FileItem({
 
   return (
     <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-      <TouchableOpacity
-        style={[fiStyles.item, isSelected && fiStyles.itemSelected]}
+      <Raised
         onPress={onPress}
         onLongPress={onLongPress}
-        activeOpacity={0.72}
+        radius={18} depth={4}
+        face={isSelected ? THEME3D.skyTint.face : '#ffffff'}
+        edge={isSelected ? THEME3D.skyTint.edge : THEME3D.white.edge}
+        faceStyle={fiStyles.item}
       >
         {isSelectMode && (
           <View style={[fiStyles.checkbox, isSelected && fiStyles.checkboxActive]}>
@@ -1108,9 +1112,14 @@ function FileItem({
         )}
 
         {/* Icon */}
-        <View style={[fiStyles.iconWrap, { backgroundColor: ic.bg }]}>
+        <Raised
+          radius={14} depth={3} glowOpacity={0.1}
+          face={ic.bg} edge={ic.color + '45'} glow={ic.color}
+          style={{ marginRight: 14 }}
+          faceStyle={fiStyles.iconWrap}
+        >
           {getIcon(item.type, 20, item.name)}
-        </View>
+        </Raised>
 
         {/* Info */}
         <View style={fiStyles.info}>
@@ -1143,24 +1152,14 @@ function FileItem({
             </TouchableOpacity>
           </View>
         )}
-      </TouchableOpacity>
+      </Raised>
     </Animated.View>
   );
 }
 
 const fiStyles = StyleSheet.create({
-  item: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16, padding: 14,
-    marginBottom: 0,
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  itemSelected: { backgroundColor: '#eff6ff' },
+  item: { flexDirection: 'row', alignItems: 'center', padding: 14 },
+  itemSelected: {},
   checkbox: {
     width: 20, height: 20, borderRadius: 6,
     borderWidth: 2, borderColor: '#cbd5e1',
@@ -1168,10 +1167,7 @@ const fiStyles = StyleSheet.create({
   },
   checkboxActive: { borderColor: '#2563eb', backgroundColor: '#2563eb' },
   checkMark: { width: 8, height: 8, backgroundColor: '#fff', borderRadius: 2 },
-  iconWrap: {
-    width: 44, height: 44, borderRadius: 13,
-    alignItems: 'center', justifyContent: 'center', marginRight: 14,
-  },
+  iconWrap: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   info:    { flex: 1, gap: 4 },
   name:    { fontSize: 13, fontWeight: '700', color: '#1e293b' },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -1402,14 +1398,18 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
         <View style={styles.header}>
           <Text style={styles.title}>Files</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.actionCard} onPress={pickDocument} disabled={uploading}>
+            <Raised onPress={pickDocument} disabled={uploading} radius={12} depth={3}
+              face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow} glowOpacity={0.3}
+              faceStyle={styles.raisedBtn}>
               {uploading
-                ? <ActivityIndicator color="#2563eb" size="small" />
-                : <><Upload size={13} color="#2563eb" /><Text style={styles.actionCardText}>Upload</Text></>}
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionCard, { backgroundColor: '#ecfdf5', borderColor: '#d1fae5' }]} onPress={() => setShowNoteModal(true)}>
-              <Plus size={13} color="#10b981" /><Text style={[styles.actionCardText, { color: '#10b981' }]}>Note</Text>
-            </TouchableOpacity>
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <><Upload size={13} color="#fff" strokeWidth={2.5} /><Text style={[styles.actionCardText, { color: '#fff' }]}>Upload</Text></>}
+            </Raised>
+            <Raised onPress={() => setShowNoteModal(true)} radius={12} depth={3}
+              face={THEME3D.greenTint.face} edge={THEME3D.greenTint.edge} glow={THEME3D.greenTint.glow}
+              faceStyle={styles.raisedBtn}>
+              <Plus size={13} color="#10b981" strokeWidth={2.5} /><Text style={[styles.actionCardText, { color: '#059669' }]}>Note</Text>
+            </Raised>
           </View>
         </View>
 
@@ -1427,18 +1427,21 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
             const Icon     = cat.icon;
             const isActive = category === cat.id;
             return (
-              <TouchableOpacity
+              <Raised
                 key={cat.id}
-                style={[styles.tab, isActive && { backgroundColor: cat.color, borderColor: cat.color }]}
                 onPress={() => setCategory(cat.id)}
-                activeOpacity={0.7}
+                radius={20} depth={3} glowOpacity={isActive ? 0.28 : 0.1}
+                face={isActive ? cat.color : '#ffffff'}
+                edge={isActive ? shade(cat.color, 0.28) : THEME3D.white.edge}
+                glow={cat.color}
+                faceStyle={styles.tab}
               >
-                <Icon size={11} color={isActive ? '#fff' : cat.color} strokeWidth={2} />
+                <Icon size={11} color={isActive ? '#fff' : cat.color} strokeWidth={2.25} />
                 <Text style={[styles.tabText, isActive && { color: '#fff' }]}>{cat.label}</Text>
                 <View style={[styles.tabCount, { backgroundColor: isActive ? 'rgba(255,255,255,0.25)' : cat.color + '18' }]}>
                   <Text style={[styles.tabCountText, { color: isActive ? '#fff' : cat.color }]}>{counts[cat.id]}</Text>
                 </View>
-              </TouchableOpacity>
+              </Raised>
             );
           })}
         </ScrollView>
@@ -1463,12 +1466,12 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
               </TouchableOpacity>
             )}
           </View>
-          <TouchableOpacity style={styles.sortBtn} onPress={() => setShowSortOptions(true)}>
+          <Raised onPress={() => setShowSortOptions(true)} radius={14} depth={3} faceStyle={styles.sortBtn}>
             <ArrowUpDown size={13} color="#64748b" />
             <Text style={styles.sortBtnText}>
               {sortOption === 'newest' ? 'New' : sortOption === 'oldest' ? 'Old' : sortOption === 'name-asc' ? 'A–Z' : 'Z–A'}
             </Text>
-          </TouchableOpacity>
+          </Raised>
         </View>
 
       </View>{/* end topBlock */}
@@ -1566,9 +1569,11 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
               returnKeyType="done"
               onSubmitEditing={renameFile}
             />
-            <TouchableOpacity style={styles.dialogBtn} onPress={renameFile}>
+            <Raised onPress={renameFile} radius={14} depth={4}
+              face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow} glowOpacity={0.3}
+              style={{ width: '100%', marginTop: 8 }} faceStyle={styles.dialogBtnFace}>
               <Text style={styles.dialogBtnText}>Save</Text>
-            </TouchableOpacity>
+            </Raised>
             <TouchableOpacity onPress={() => { setShowRenameModal(false); setEditingFile(null); }}>
               <Text style={styles.dialogCancel}>Cancel</Text>
             </TouchableOpacity>
@@ -1634,9 +1639,11 @@ export default function FilesPage({ activeFolderId }: { activeFolderId?: number 
                 scrollEnabled={false}
               />
             </ScrollView>
-            <TouchableOpacity style={[styles.dialogBtn, { marginTop: 10 }]} onPress={createNote} disabled={savingNote}>
+            <Raised onPress={createNote} disabled={savingNote} radius={14} depth={4}
+              face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow} glowOpacity={0.3}
+              style={{ marginTop: 10 }} faceStyle={styles.dialogBtnFace}>
               {savingNote ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.dialogBtnText}>Create Note</Text>}
-            </TouchableOpacity>
+            </Raised>
             <TouchableOpacity style={styles.sheetCancel} onPress={() => { setShowNoteModal(false); setNoteName(''); setNoteContent(''); }}>
               <Text style={styles.sheetCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -1672,16 +1679,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#eff6ff',
     paddingHorizontal: 11, paddingVertical: 7, borderRadius: 10,
   },
+  raisedBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 13, paddingVertical: 9 },
+  dialogBtnFace: { height: 48, alignItems: 'center', justifyContent: 'center' },
   actionCardText: { fontSize: 11, fontWeight: '800', color: '#2563eb' },
 
   // ── Chips ──
-  tabsScroll:   { height: 56 },
+  tabsScroll:   { height: 62 },
   tabsContent:  { paddingHorizontal: 18, paddingVertical: 11, gap: 8, alignItems: 'center' },
   tab: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-    height: 34,
+    paddingHorizontal: 12, height: 34,
   },
   tabText:      { fontSize: 11, fontWeight: '700', color: '#64748b' },
   tabCount:     { minWidth: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
@@ -1700,8 +1707,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 13, color: '#1e293b', fontWeight: '500' },
   sortBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 13, paddingHorizontal: 12, height: 44,
+    paddingHorizontal: 12, height: 40,
   },
   sortBtnText: { fontSize: 10, fontWeight: '800', color: '#64748b' },
 
