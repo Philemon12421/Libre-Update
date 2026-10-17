@@ -13,6 +13,7 @@ import {
 import { db, LibreFile, LibreFolder } from '../lib/db';
 import { format } from 'date-fns';
 import FilesPage from './Files';
+import Raised, { THEME3D, shade } from '../components/Raised';
 
 // ── Colour palette for folders ─────────────────────────────────────────────
 const FOLDER_COLORS = [
@@ -62,26 +63,21 @@ function FolderCard({
   onChangeColor: () => void;
 }) {
   const fs      = getFolderStyle((folder as any).color);
-  const scaleAn = useRef(new Animated.Value(1)).current;
-
-  const onPressIn  = () => Animated.spring(scaleAn, { toValue: 0.97, useNativeDriver: true, speed: 40 }).start();
-  const onPressOut = () => Animated.spring(scaleAn, { toValue: 1,    useNativeDriver: true, speed: 40 }).start();
 
   return (
-    <Animated.View style={[fc.card, { transform: [{ scale: scaleAn }] }]}>
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={onOpen}
-        onPressIn={onPressIn}
-        onPressOut={onPressOut}
-        style={fc.touchArea}
-      >
+    <Raised
+      onPress={onOpen}
+      radius={22} depth={6} glowOpacity={0.18} glow={fs.color}
+      face="#ffffff" edge={fs.color + '3d'}
+      faceStyle={fc.touchArea}
+    >
         {/* Top row */}
         <View style={fc.topRow}>
           {/* Folder icon */}
-          <View style={[fc.iconWrap, { backgroundColor: fs.bg, borderColor: fs.border }]}>
-            <FolderIcon size={26} color={fs.color} fill={fs.bg} />
-          </View>
+          <Raised radius={16} depth={4} glowOpacity={0.12} glow={fs.color}
+            face={fs.bg} edge={fs.color + '55'} faceStyle={fc.iconWrap}>
+            <FolderIcon size={26} color={fs.color} fill="#ffffff" />
+          </Raised>
 
           {/* Actions */}
           <View style={fc.actions}>
@@ -130,25 +126,14 @@ function FolderCard({
           <Text style={[fc.openText, { color: fs.color }]}>Open folder</Text>
           <ChevronRight size={13} color={fs.color} />
         </View>
-      </TouchableOpacity>
-    </Animated.View>
+    </Raised>
   );
 }
 
 const fc = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
-  },
   touchArea:  { padding: 16 },
   topRow:     { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
-  iconWrap:   { width: 52, height: 52, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  iconWrap:   { width: 52, height: 52, alignItems: 'center', justifyContent: 'center' },
   actions:    { flexDirection: 'row', gap: 4, alignItems: 'center' },
   actionBtn:  { width: 30, height: 30, borderRadius: 9, backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center' },
   colorDot:   { width: 10, height: 10, borderRadius: 5 },
@@ -363,14 +348,15 @@ export default function FoldersPage() {
             <Text style={styles.title}>Library</Text>
             <Text style={styles.subtitle}>{totalFolders} folders · {totalFiles} files</Text>
           </View>
-          <TouchableOpacity
-            style={styles.newBtn}
+          <Raised
             onPress={() => { setNewFolderName(''); setSelectedColor('blue'); setShowCreateModal(true); }}
-            activeOpacity={0.85}
+            radius={14} depth={4} glowOpacity={0.32}
+            face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow}
+            faceStyle={styles.newBtnFace}
           >
             <Plus size={15} color="#fff" strokeWidth={2.5} />
             <Text style={styles.newBtnText}>New Folder</Text>
-          </TouchableOpacity>
+          </Raised>
         </View>
 
         {/* Search */}
@@ -401,10 +387,11 @@ export default function FoldersPage() {
             { label: 'Files',   value: totalFiles,   color: '#10b981', bg: '#ecfdf5' },
             { label: 'Used',    value: totalFiles > 0 ? `${totalFiles}` : '—', color: '#7c3aed', bg: '#f5f3ff' },
           ].map((s, i) => (
-            <View key={i} style={[styles.statCard, { backgroundColor: s.bg }]}>
+            <Raised key={i} radius={16} depth={4} glowOpacity={0.12} glow={s.color}
+              face={s.bg} edge={s.color + '40'} style={{ flex: 1 }} faceStyle={styles.statFace}>
               <Text style={[styles.statValue, { color: s.color }]}>{s.value}</Text>
               <Text style={styles.statLabel}>{s.label}</Text>
-            </View>
+            </Raised>
           ))}
         </View>
       )}
@@ -420,14 +407,15 @@ export default function FoldersPage() {
             {searchQuery ? 'Try a different keyword' : 'Tap "New Folder" to organise your files'}
           </Text>
           {!searchQuery && (
-            <TouchableOpacity
-              style={styles.emptyBtn}
+            <Raised
               onPress={() => { setNewFolderName(''); setSelectedColor('blue'); setShowCreateModal(true); }}
-              activeOpacity={0.85}
+              radius={16} depth={5} glowOpacity={0.3} style={{ marginTop: 8 }}
+              face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow}
+              faceStyle={styles.emptyBtnFace}
             >
-              <Plus size={14} color="#fff" />
+              <Plus size={14} color="#fff" strokeWidth={2.5} />
               <Text style={styles.emptyBtnText}>Create First Folder</Text>
-            </TouchableOpacity>
+            </Raised>
           )}
         </View>
       ) : (
@@ -507,14 +495,14 @@ export default function FoldersPage() {
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={[styles.createBtn, { backgroundColor: getFolderStyle(selectedColor).color }]}
-              onPress={createFolder}
-              activeOpacity={0.85}
-              disabled={saving}
+            <Raised
+              onPress={createFolder} disabled={saving}
+              radius={16} depth={5} glowOpacity={0.3} glow={getFolderStyle(selectedColor).color}
+              face={getFolderStyle(selectedColor).color} edge={shade(getFolderStyle(selectedColor).color)}
+              style={{ marginTop: 4 }} faceStyle={styles.createBtnFace}
             >
               {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.createBtnText}>Create Folder</Text>}
-            </TouchableOpacity>
+            </Raised>
 
             <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowCreateModal(false)}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -539,9 +527,11 @@ export default function FoldersPage() {
               returnKeyType="done"
               onSubmitEditing={renameFolder}
             />
-            <TouchableOpacity style={styles.createBtn} onPress={renameFolder} activeOpacity={0.85} disabled={saving}>
+            <Raised onPress={renameFolder} disabled={saving} radius={16} depth={5} glowOpacity={0.3}
+              face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow}
+              style={{ marginTop: 4 }} faceStyle={styles.createBtnFace}>
               {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.createBtnText}>Save</Text>}
-            </TouchableOpacity>
+            </Raised>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => { setShowRenameModal(false); setEditingFolder(null); }}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -606,6 +596,10 @@ const styles = StyleSheet.create({
     shadowColor: '#2563eb', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
+  newBtnFace:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 15, paddingVertical: 10 },
+  statFace:      { paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center' },
+  emptyBtnFace:  { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 22, paddingVertical: 13 },
+  createBtnFace: { height: 50, alignItems: 'center', justifyContent: 'center' },
   newBtnText: { fontSize: 11, fontWeight: '900', color: '#fff', letterSpacing: 0.3 },
 
   searchRow: { paddingHorizontal: 18, paddingBottom: 14 },
