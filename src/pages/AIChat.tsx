@@ -10,6 +10,7 @@ import {
   ChevronDown, Lightbulb, MessageCircle, Trash2,
   ExternalLink, RefreshCw,
 } from 'lucide-react-native';
+import Raised, { THEME3D } from '../components/Raised';
 
 interface Message { role: 'user' | 'assistant' | 'system'; content: string; }
 
@@ -244,27 +245,28 @@ export default function AIChatPage() {
               </Text>
 
               {!hasKey && (
-                <TouchableOpacity
-                  style={styles.setupBtn}
+                <Raised
                   onPress={() => Alert.alert('Setup', 'Go to Settings → AI Integration to add your free Groq API key.')}
-                  activeOpacity={0.85}
+                  radius={16} depth={5} glowOpacity={0.32} style={{ marginTop: 8 }}
+                  face={THEME3D.purple.face} edge={THEME3D.purple.edge} glow={THEME3D.purple.glow}
+                  faceStyle={styles.setupFace}
                 >
                   <Text style={styles.setupBtnText}>Set Up AI →</Text>
-                </TouchableOpacity>
+                </Raised>
               )}
 
               {hasKey && (
                 <View style={styles.quickGrid}>
                   {QUICK_PROMPTS.map((q, i) => (
-                    <TouchableOpacity
+                    <Raised
                       key={i}
-                      style={styles.quickCard}
                       onPress={() => sendMessage(q.prompt)}
-                      activeOpacity={0.8}
+                      radius={18} depth={4} glowOpacity={0.12}
+                      style={{ width: '46%' }} faceStyle={styles.quickFace}
                     >
                       <Text style={styles.quickCardIcon}>{q.icon}</Text>
                       <Text style={styles.quickCardLabel}>{q.label}</Text>
-                    </TouchableOpacity>
+                    </Raised>
                   ))}
                 </View>
               )}
@@ -285,17 +287,20 @@ export default function AIChatPage() {
                   <Sparkles size={11} color="#7c3aed" />
                 </View>
               )}
-              <View style={[
-                styles.bubbleInner,
-                msg.role === 'user' ? styles.userInner : styles.aiInner,
-              ]}>
+<Raised
+                radius={18} depth={3} glowOpacity={0.1}
+                face={msg.role === 'user' ? THEME3D.purple.face : '#ffffff'}
+                edge={msg.role === 'user' ? THEME3D.purple.edge : THEME3D.white.edge}
+                glow={msg.role === 'user' ? THEME3D.purple.glow : THEME3D.white.glow}
+                style={{ maxWidth: '82%' }} faceStyle={styles.bubbleFace}
+              >
                 <Text style={[
                   styles.bubbleText,
                   msg.role === 'user' ? styles.userText : styles.aiText,
                 ]}>
                   {msg.content}
                 </Text>
-              </View>
+              </Raised>
             </View>
           ))}
 
@@ -326,16 +331,19 @@ export default function AIChatPage() {
             editable={hasKey}
             returnKeyType="default"
           />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || loading || !hasKey) && styles.sendBtnDisabled]}
+          <Raised
             onPress={() => sendMessage()}
             disabled={!input.trim() || loading || !hasKey}
-            activeOpacity={0.85}
+            radius={16} depth={4}
+            glowOpacity={(!input.trim() || loading || !hasKey) ? 0 : 0.35} glow={THEME3D.purple.glow}
+            face={(!input.trim() || loading || !hasKey) ? '#e2e8f0' : THEME3D.purple.face}
+            edge={(!input.trim() || loading || !hasKey) ? '#cbd5e1' : THEME3D.purple.edge}
+            faceStyle={styles.sendFace}
           >
             {loading
               ? <ActivityIndicator size="small" color="#fff" />
-              : <Send size={16} color="#fff" />}
-          </TouchableOpacity>
+              : <Send size={16} color={(!input.trim() || !hasKey) ? '#94a3b8' : '#fff'} />}
+          </Raised>
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -405,6 +413,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 11,
     fontSize: 14, color: '#1e293b', maxHeight: 120, lineHeight: 20,
   },
+  setupFace:  { paddingHorizontal: 26, paddingVertical: 13 },
+  quickFace:  { padding: 14, alignItems: 'flex-start', gap: 6 },
+  sendFace:   { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  bubbleFace: { padding: 13 },
   sendBtn: {
     width: 44, height: 44, borderRadius: 14,
     backgroundColor: '#7c3aed', alignItems: 'center', justifyContent: 'center',
