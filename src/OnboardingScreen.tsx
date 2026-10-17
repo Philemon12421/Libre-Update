@@ -8,6 +8,7 @@ import Svg, {
   Rect, Circle, G, Defs, LinearGradient, Stop, Path,
 } from 'react-native-svg';
 import Logo from './components/Logo';
+import Raised, { shade } from './components/Raised';
 
 const { width, height } = Dimensions.get('window');
 
@@ -344,10 +345,12 @@ export default function OnboardingScreen({ onFinish }: Props) {
         </View>
 
         {/* CTA button */}
-        <TouchableOpacity
+        <Raised
           onPress={goNext}
-          activeOpacity={0.85}
-          style={[styles.cta, { backgroundColor: accent }]}
+          radius={18} depth={6} glowOpacity={0.38} glow={accent}
+          face={accent} edge={shade(accent)}
+          style={{ width: '100%' }}
+          faceStyle={styles.ctaFace}
         >
           <Text style={styles.ctaText}>{isLast ? 'GET STARTED' : 'CONTINUE'}</Text>
           {!isLast && (
@@ -355,7 +358,7 @@ export default function OnboardingScreen({ onFinish }: Props) {
               <Text style={styles.ctaArrowText}>→</Text>
             </View>
           )}
-        </TouchableOpacity>
+        </Raised>
 
         <Text style={styles.stepText}>{activeIndex + 1} of {SLIDES.length}</Text>
       </View>
@@ -428,6 +431,7 @@ const styles = StyleSheet.create({
     shadowColor: '#2563eb', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25, shadowRadius: 14, elevation: 8,
   },
+  ctaFace: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   ctaText:      { fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 2 },
   ctaArrow: {
     width: 26, height: 26, borderRadius: 13,
