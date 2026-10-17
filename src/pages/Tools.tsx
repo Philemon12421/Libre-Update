@@ -13,6 +13,7 @@ import {
   FileOutput, FileInput, ChevronRight, X, CheckCircle,
   Download, AlertCircle, Loader, Plus, Trash2, File,
 } from 'lucide-react-native';
+import Raised, { THEME3D, shade } from '../components/Raised';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -274,31 +275,34 @@ function FilePickerModal({
 
         {/* Add file button */}
         {(tool.maxFiles < 0 || picked.length < tool.maxFiles) && tool.maxFiles !== 0 && (
-          <TouchableOpacity
-            style={[fp.addBtn, picking && { opacity: 0.6 }]}
-            onPress={addFile}
-            disabled={picking}
-            activeOpacity={0.8}
+          <Raised
+            onPress={addFile} disabled={picking}
+            radius={14} depth={4}
+            face={THEME3D.slateTint.face} edge={THEME3D.slateTint.edge}
+            style={{ marginBottom: 10, opacity: picking ? 0.6 : 1 }}
+            faceStyle={fp.addBtnFace}
           >
             {picking
               ? <ActivityIndicator size="small" color="#64748b" />
-              : <><Plus size={15} color="#64748b" /><Text style={fp.addBtnText}>Add File</Text></>}
-          </TouchableOpacity>
+              : <><Plus size={15} color="#64748b" strokeWidth={2.5} /><Text style={fp.addBtnText}>Add File</Text></>}
+          </Raised>
         )}
 
         {/* Start button */}
-        <TouchableOpacity
-          style={[fp.startBtn, { backgroundColor: canStart ? tool.accentColor : '#e2e8f0' },
-            { shadowColor: canStart ? tool.accentColor : 'transparent' }]}
+        <Raised
           onPress={() => canStart && onStart(picked)}
-          activeOpacity={canStart ? 0.85 : 1}
+          radius={18} depth={5} glowOpacity={canStart ? 0.34 : 0}
+          face={canStart ? tool.accentColor : '#e2e8f0'}
+          edge={canStart ? shade(tool.accentColor) : '#cbd5e1'}
+          glow={tool.accentColor}
+          faceStyle={fp.startBtnFace}
         >
           <Text style={[fp.startBtnText, { color: canStart ? '#fff' : '#94a3b8' }]}>
             {tool.minFiles === 0 && picked.length === 0
               ? 'Start (no files)'
               : `Process ${picked.length} File${picked.length !== 1 ? 's' : ''}`}
           </Text>
-        </TouchableOpacity>
+        </Raised>
       </Animated.View>
     </View>
   );
@@ -333,6 +337,8 @@ const fp = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
     backgroundColor: '#f1f5f9', borderRadius: 12, height: 44, marginBottom: 10,
   },
+  addBtnFace: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, height: 46 },
+  startBtnFace: { height: 54, alignItems: 'center', justifyContent: 'center' },
   addBtnText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
   startBtn: {
     height: 54, borderRadius: 16,
@@ -486,23 +492,24 @@ function ProcessModal({
         {isDone && (
           <View style={pm.actionsCol}>
             {state.outputUri && (
-              <TouchableOpacity
-                style={[pm.downloadBtn, { backgroundColor: tool.accentColor, shadowColor: tool.accentColor }]}
+              <Raised
                 onPress={onDownload}
-                activeOpacity={0.85}
+                radius={18} depth={5} glowOpacity={0.34} glow={tool.accentColor}
+                face={tool.accentColor} edge={shade(tool.accentColor)}
+                faceStyle={pm.downloadFace}
               >
-                <Download size={17} color="#fff" />
+                <Download size={17} color="#fff" strokeWidth={2.5} />
                 <Text style={pm.downloadBtnText}>Download & Share</Text>
-              </TouchableOpacity>
+              </Raised>
             )}
             {state.message !== '' && !state.outputUri && (
               <View style={[pm.infoBox, { backgroundColor: tool.iconBg }]}>
                 <Text style={[pm.infoText, { color: tool.accentColor }]}>{state.message}</Text>
               </View>
             )}
-            <TouchableOpacity style={pm.doneBtn} onPress={onClose} activeOpacity={0.7}>
+            <Raised onPress={onClose} radius={16} depth={4} face={THEME3D.slateTint.face} edge={THEME3D.slateTint.edge} faceStyle={pm.doneFace}>
               <Text style={pm.doneBtnText}>Done</Text>
-            </TouchableOpacity>
+            </Raised>
           </View>
         )}
 
@@ -513,9 +520,9 @@ function ProcessModal({
               <AlertCircle size={14} color="#ef4444" />
               <Text style={pm.errorText}>{state.message}</Text>
             </View>
-            <TouchableOpacity style={pm.doneBtn} onPress={onClose} activeOpacity={0.7}>
+            <Raised onPress={onClose} radius={16} depth={4} face={THEME3D.slateTint.face} edge={THEME3D.slateTint.edge} faceStyle={pm.doneFace}>
               <Text style={pm.doneBtnText}>Close</Text>
-            </TouchableOpacity>
+            </Raised>
           </View>
         )}
 
@@ -566,6 +573,8 @@ const pm = StyleSheet.create({
     justifyContent: 'center', gap: 10, width: '100%',
     shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6,
   },
+  downloadFace: { height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
+  doneFace: { height: 46, alignItems: 'center', justifyContent: 'center' },
   downloadBtnText: { fontSize: 13, fontWeight: '900', color: '#fff', letterSpacing: 0.8 },
   infoBox:  { backgroundColor: '#f8fafc', borderRadius: 14, padding: 14, width: '100%' },
   infoText: { fontSize: 12, fontWeight: '600', textAlign: 'center', lineHeight: 18 },
@@ -772,21 +781,24 @@ export default function ToolsPage() {
         </View>
 
         {/* Banner */}
-        <View style={styles.banner}>
-          <View style={styles.bannerIcon}>
+        <Raised radius={22} depth={5} glowOpacity={0.2} glow="#2563eb"
+          face={THEME3D.skyTint.face} edge={THEME3D.skyTint.edge}
+          style={{ marginBottom: 26 }} faceStyle={styles.bannerFace}>
+          <Raised radius={15} depth={4} glowOpacity={0.15} glow="#2563eb"
+            face="#ffffff" edge="#bfdbfe" faceStyle={styles.bannerIconFace}>
             <FileText size={20} color="#2563eb" />
-          </View>
+          </Raised>
           <View style={{ flex: 1 }}>
             <Text style={styles.bannerTitle}>Document Utilities</Text>
             <Text style={styles.bannerSub}>Select files → process → download instantly</Text>
           </View>
-        </View>
+        </Raised>
 
         {/* Tool sections */}
         {TOOLS.map(section => (
           <View key={section.section} style={styles.section}>
             <Text style={styles.sectionLabel}>{section.section.toUpperCase()}</Text>
-            <View style={styles.card}>
+            <View style={styles.toolList}>
               {section.items.map((tool, i) => {
                 const Icon     = tool.icon;
                 const isLast   = i === section.items.length - 1;
@@ -795,14 +807,19 @@ export default function ToolsPage() {
                 const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [30, 0] });
                 return (
                   <Animated.View key={tool.id} style={{ opacity, transform: [{ translateX }] }}>
-                    <TouchableOpacity
-                      style={[styles.toolRow, !isLast && styles.toolSep]}
+                    <Raised
                       onPress={() => setPickerTool(tool)}
-                      activeOpacity={0.7}
+                      radius={20} depth={4} glowOpacity={0.12} glow={tool.iconColor}
+                      face="#ffffff" edge={THEME3D.white.edge}
+                      faceStyle={styles.toolRow}
                     >
-                      <View style={[styles.toolIcon, { backgroundColor: tool.iconBg }]}>
-                        <Icon size={19} color={tool.iconColor} strokeWidth={2} />
-                      </View>
+                      <Raised
+                        radius={14} depth={3} glowOpacity={0.1} glow={tool.iconColor}
+                        face={tool.iconBg} edge={tool.iconColor + '45'}
+                        faceStyle={styles.toolIconFace}
+                      >
+                        <Icon size={19} color={tool.iconColor} strokeWidth={2.25} />
+                      </Raised>
                       <View style={styles.toolInfo}>
                         <View style={styles.toolLabelRow}>
                           <Text style={styles.toolLabel}>{tool.label}</Text>
@@ -815,7 +832,7 @@ export default function ToolsPage() {
                         <Text style={styles.toolDesc}>{tool.description}</Text>
                       </View>
                       <ChevronRight size={15} color="#cbd5e1" />
-                    </TouchableOpacity>
+                    </Raised>
                   </Animated.View>
                 );
               })}
@@ -873,7 +890,11 @@ const styles = StyleSheet.create({
     shadowColor: '#0f172a', shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
-  toolRow:     { flexDirection: 'row', alignItems: 'center', padding: 16, gap: 14 },
+  toolList:    { gap: 12 },
+  toolRow:     { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 14 },
+  toolIconFace:{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  bannerFace:  { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+  bannerIconFace: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   toolSep:     { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#f1f5f9' },
   toolIcon:    { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   toolInfo:    { flex: 1 },
