@@ -14,6 +14,7 @@ import {
   Zap, Plus, X, ChevronDown,
 } from 'lucide-react-native';
 import { db } from '../lib/db';
+import Raised, { THEME3D, shade } from '../components/Raised';
 
 type PermStatus = 'granted' | 'denied' | 'undetermined' | 'unavailable';
 
@@ -291,24 +292,18 @@ function APIKeyModal({ visible, onClose }: { visible: boolean; onClose: () => vo
 
                 {/* Actions */}
                 <View style={ak.actions}>
-                  <TouchableOpacity
-                    style={[ak.testBtn, { backgroundColor: provider.bg }]}
-                    onPress={testKey}
-                    disabled={testing}
-                    activeOpacity={0.8}
-                  >
+                  <Raised onPress={testKey} disabled={testing} radius={15} depth={4} glowOpacity={0.1}
+                    face={provider.bg} edge={provider.color + '45'} glow={provider.color}
+                    style={{ flex: 1 }} faceStyle={ak.btnFace}>
                     <Text style={[ak.testBtnText, { color: provider.color }]}>
                       {testing ? 'Testing…' : 'Test Key'}
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[ak.saveBtn, { backgroundColor: provider.color }]}
-                    onPress={saveKey}
-                    disabled={saving}
-                    activeOpacity={0.85}
-                  >
+                  </Raised>
+                  <Raised onPress={saveKey} disabled={saving} radius={15} depth={4} glowOpacity={0.3} glow={provider.color}
+                    face={provider.color} edge={shade(provider.color)}
+                    style={{ flex: 2 }} faceStyle={ak.btnFace}>
                     <Text style={ak.saveBtnText}>{saving ? 'Saving…' : 'Save Key'}</Text>
-                  </TouchableOpacity>
+                  </Raised>
                 </View>
 
                 {/* Status */}
@@ -424,6 +419,7 @@ const ak = StyleSheet.create({
   // ── Actions ──
   actions:     { flexDirection: 'row', gap: 10, padding: 16, paddingTop: 16 },
   testBtn:     { flex: 1, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  btnFace: { height: 48, alignItems: 'center', justifyContent: 'center' },
   testBtnText: { fontSize: 12, fontWeight: '800' },
   saveBtn:     { flex: 2, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   saveBtnText: { fontSize: 12, fontWeight: '900', color: '#fff' },
@@ -526,9 +522,11 @@ export default function SettingsPage() {
   const PermButton = ({ status, onRequest, loading }: { status: PermStatus; onRequest: () => void; loading: boolean }) => {
     if (status === 'granted') return <StatusBadge status="granted" />;
     return (
-      <TouchableOpacity style={[st.reqBtn, loading && { opacity: 0.6 }]} onPress={onRequest} disabled={loading}>
+      <Raised onPress={onRequest} disabled={loading} radius={11} depth={3} glowOpacity={0.3}
+        face={THEME3D.blue.face} edge={THEME3D.blue.edge} glow={THEME3D.blue.glow}
+        style={{ opacity: loading ? 0.6 : 1 }} faceStyle={st.reqFace}>
         <Text style={st.reqBtnText}>{loading ? 'Requesting…' : status === 'denied' ? 'Try Again' : 'Enable'}</Text>
-      </TouchableOpacity>
+      </Raised>
     );
   };
 
@@ -550,7 +548,8 @@ export default function SettingsPage() {
       {/* ── AI KEYS ── */}
       <Text style={st.sectionLabel}>AI INTEGRATION</Text>
 
-      <TouchableOpacity style={st.aiCard} onPress={() => setShowAPIModal(true)} activeOpacity={0.88}>
+      <Raised onPress={() => setShowAPIModal(true)} radius={20} depth={6} glowOpacity={0.4} glow={THEME3D.orange.glow}
+        face={THEME3D.orange.face} edge={THEME3D.orange.edge} faceStyle={st.aiCard}>
         <View style={st.aiCircle1} pointerEvents="none" />
         {/* Left: icon + text */}
         <View style={st.aiCardLeft}>
@@ -571,21 +570,21 @@ export default function SettingsPage() {
           <View style={[st.aiStatusDot, { backgroundColor: configuredCount > 0 ? '#4ade80' : 'rgba(255,255,255,0.35)' }]} />
           <Text style={st.aiStatusText}>→</Text>
         </View>
-      </TouchableOpacity>
+      </Raised>
 
       {/* ── PREFERENCES ── */}
       <Text style={st.sectionLabel}>PREFERENCES</Text>
-      <View style={st.card}>
+      <Raised radius={20} depth={4} glowOpacity={0.12} style={st.cardOuter} faceStyle={st.cardFace}>
         <View style={st.row}>
           <View style={[st.iconBox, { backgroundColor: '#eff6ff' }]}><Bell size={16} color="#3b82f6" /></View>
           <View style={st.rowInfo}><Text style={st.rowLabel}>Notifications</Text><Text style={st.rowDesc}>Archive alerts & reminders</Text></View>
           <Switch value={notifications} onValueChange={v => { if (v && notifPerm !== 'granted') requestNotifPerm(); else setNotifications(v); }} trackColor={{ false: '#e2e8f0', true: '#2563eb' }} thumbColor="#fff" />
         </View>
-      </View>
+      </Raised>
 
       {/* ── STORAGE ── */}
       <Text style={st.sectionLabel}>STORAGE</Text>
-      <View style={st.card}>
+      <Raised radius={20} depth={4} glowOpacity={0.12} style={st.cardOuter} faceStyle={st.cardFace}>
         <View style={st.row}>
           <View style={[st.iconBox, { backgroundColor: '#ecfdf5' }]}><Database size={16} color="#10b981" /></View>
           <View style={st.rowInfo}><Text style={st.rowLabel}>Local Storage</Text><Text style={st.rowDesc}>Files stored on your device</Text></View>
@@ -597,11 +596,11 @@ export default function SettingsPage() {
           <View style={st.rowInfo}><Text style={[st.rowLabel, { color: '#ef4444' }]}>Clear All Data</Text><Text style={st.rowDesc}>Permanently delete all files & folders</Text></View>
           <ChevronRight size={16} color="#cbd5e1" />
         </TouchableOpacity>
-      </View>
+      </Raised>
 
       {/* ── PERMISSIONS ── */}
       <Text style={st.sectionLabel}>PERMISSIONS</Text>
-      <View style={st.card}>
+      <Raised radius={20} depth={4} glowOpacity={0.12} style={st.cardOuter} faceStyle={st.cardFace}>
         <View style={st.row}>
           <View style={[st.iconBox, { backgroundColor: '#fff7ed' }]}><Lock size={16} color="#f97316" /></View>
           <View style={st.rowInfo}><Text style={st.rowLabel}>Storage / Media</Text><Text style={st.rowDesc}>Save files to device library</Text></View>
@@ -613,17 +612,17 @@ export default function SettingsPage() {
           <View style={st.rowInfo}><Text style={st.rowLabel}>Notifications</Text><Text style={st.rowDesc}>Receive archive alerts</Text></View>
           <PermButton status={notifPerm} onRequest={requestNotifPerm} loading={requestingNotif} />
         </View>
-      </View>
+      </Raised>
 
       {/* ── PRIVACY ── */}
       <Text style={st.sectionLabel}>PRIVACY</Text>
-      <View style={st.card}>
+      <Raised radius={20} depth={4} glowOpacity={0.12} style={st.cardOuter} faceStyle={st.cardFace}>
         <View style={st.row}>
           <View style={[st.iconBox, { backgroundColor: '#f5f3ff' }]}><Shield size={16} color="#8b5cf6" /></View>
           <View style={st.rowInfo}><Text style={st.rowLabel}>Privacy First</Text><Text style={st.rowDesc}>Documents never leave your device · AI only sees text you share</Text></View>
           <View style={st.greenBadge}><Text style={st.greenBadgeText}>Local</Text></View>
         </View>
-      </View>
+      </Raised>
 
       <View style={st.versionRow}>
         <View style={st.versionDot} />
@@ -661,11 +660,7 @@ const st = StyleSheet.create({
 
   aiCard: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#f97316', borderRadius: 18,
-    paddingHorizontal: 16, paddingVertical: 14,
-    overflow: 'hidden',
-    shadowColor: '#c2410c', shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.35, shadowRadius: 12, elevation: 7,
+    paddingHorizontal: 16, paddingVertical: 14, overflow: 'hidden',
   },
   aiCircle1: {
     position: 'absolute', width: 120, height: 120, borderRadius: 60,
@@ -680,6 +675,9 @@ const st = StyleSheet.create({
   aiCardSub:   { fontSize: 11, color: 'rgba(255,255,255,0.75)' },
 
   card: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 2 },
+  cardOuter: {},
+  cardFace:  { overflow: 'hidden' },
+  reqFace:   { paddingHorizontal: 12, paddingVertical: 7 },
   rowDiv:  { height: 1, backgroundColor: '#f8fafc', marginHorizontal: 16 },
   row:     { flexDirection: 'row', alignItems: 'center', padding: 16 },
   iconBox: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
