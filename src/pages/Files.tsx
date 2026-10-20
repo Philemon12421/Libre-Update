@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, FlatList,
   Modal, TextInput, ActivityIndicator, Alert, ScrollView,
-  Image, Platform, Animated, KeyboardAvoidingView, Keyboard,
+  Image, Platform, Animated, KeyboardAvoidingView, Keyboard, Pressable,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
@@ -11,7 +11,7 @@ import {
   FileText, Image as ImageIcon, File, Download, Trash2,
   Upload, X, Edit2, Plus, Search, ArrowUpDown, BookOpen,
   FileCode, Layout, Star, Folder as FolderIcon, MoreHorizontal,
-  ExternalLink, ChevronLeft, ZoomIn, Sparkles, Send, MessageCircle,
+  ExternalLink, ChevronLeft, ZoomIn, Minus, Sparkles, Send, MessageCircle,
 } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -94,6 +94,14 @@ function getPreviewType(file: LibreFile): 'image' | 'text' | 'pdf' | 'office' | 
   return 'none';
 }
 
+function officeKind(file: LibreFile): 'docx' | 'sheet' | 'pptx' | 'unsupported' {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'docx') return 'docx';
+  if (['xlsx', 'xls', 'ods'].includes(ext)) return 'sheet';
+  if (ext === 'pptx') return 'pptx';
+  return 'unsupported';
+}
+
 function getIconColor(type: string, name = '') {
   const t   = type.toLowerCase();
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
@@ -151,166 +159,287 @@ const SPINNER_CSS = `
   .err-msg{font-size:12px;color:#94a3b8;line-height:1.7;max-width:280px}
 `;
 
+// ═══ Docs-style in-app viewers ═══════════════════════════════════════════
+// Every viewer is a self-contained HTML page shown in a WebView. Local files are
+// read as base64 on the native side and handed to the page, so nothing depends on
+// file:// access. The page tells React Native it has drawn something by posting 'ready'.
+
+const DOCS_BG = '#f1f3f4';
+
+const PAGE_JS_HELPERS =
+  "function post(m){try{window.ReactNativeWebView.postMessage(m)}catch(e){}}" +
+  "function ready(){post('ready')}" +
+  "function b2u(b){var s=atob(b),n=s.length,u=new Uint8Array(n);for(var i=0;i<n;i++)u[i]=s.charCodeAt(i);return u}" +
+  "function fail(m){var e=document.getElementById('err');if(e){e.style.display='block';e.innerHTML='<div class=\"ei\">&#128196;</div><div class=\"et\">Preview unavailable</div><div class=\"em\">'+(m||'Something went wrong')+'</div>'}ready()}";
+
+const ERR_CSS =
+  "#err{display:none;padding:56px 28px;text-align:center;font-family:Arial,sans-serif}" +
+  ".ei{font-size:40px;margin-bottom:10px}.et{font-size:16px;font-weight:700;color:#202124;margin-bottom:6px}" +
+  ".em{font-size:13px;color:#5f6368;line-height:1.6}";
+
+const PAPER_CSS =
+  "*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}" +
+  "html,body{margin:0;background:" + DOCS_BG + "}body{padding:12px 0 40px}" +
+  ".paper{background:#fff;margin:0 auto;width:calc(100% - 16px);max-width:816px;min-height:70vh;padding:40px 30px;" +
+  "box-shadow:0 1px 3px rgba(60,64,67,.3),0 4px 8px 3px rgba(60,64,67,.15);font-family:Arial,Helvetica,sans-serif;" +
+  "font-size:15px;line-height:1.7;color:#202124;overflow-wrap:anywhere}" +
+  ".paper h1{font-size:26px;margin:18px 0 10px;line-height:1.25}.paper h2{font-size:21px;margin:16px 0 8px}" +
+  ".paper h3{font-size:17px;margin:14px 0 6px}.paper p{margin:0 0 12px}.paper img{max-width:100%;height:auto}" +
+  ".paper table{border-collapse:collapse;max-width:100%;display:block;overflow-x:auto;margin:10px 0}" +
+  ".paper td,.paper th{border:1px solid #dadce0;padding:6px 9px;vertical-align:top}" +
+  ".paper ul,.paper ol{margin:0 0 12px 22px}.paper a{color:#1a73e8}" +
+  ".paper code{background:#f1f3f4;padding:2px 6px;border-radius:5px;font-family:'Courier New',monospace;font-size:13px;color:#7c3aed}" +
+  ".paper blockquote{border-left:4px solid #dadce0;margin:12px 0;padding:6px 16px;color:#5f6368;background:#f8f9fa}";
+
+// ── PDF: remote (Google viewer) ──────────────────────────────────────────
 function buildPdfHtml(uri: string): string {
-  const isRemote = uri.startsWith('http');
+  const gd = 'https://docs.google.com/viewer?url=' + encodeURIComponent(uri) + '&embedded=true';
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{margin:0;padding:0}html,body{height:100%;background:${DOCS_BG}}iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head>
+<body><iframe src="${gd}" onload="try{window.ReactNativeWebView.postMessage('ready')}catch(e){}"></iframe></body></html>`;
+}
 
-  // For remote PDFs use Google Docs viewer (most reliable)
-  if (isRemote) {
-    const gdUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(uri)}&embedded=true`;
-    return `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body,html{width:100%;height:100%;overflow:hidden;background:#525659}
-  iframe{position:fixed;inset:0;width:100%;height:100%;border:none}
-  ${SPINNER_CSS}
-</style></head><body>
-<div class="spin-wrap" id="sp"><div class="ring"></div><div class="spin-label">Loading PDF…</div></div>
-<div class="err" id="er"><div class="err-icon">📄</div><div class="err-title">Preview unavailable</div><div class="err-msg">This PDF cannot be previewed inline. Open it with a PDF reader app.</div></div>
-<iframe src="${gdUrl}"
-  onload="document.getElementById('sp').style.opacity='0';setTimeout(()=>document.getElementById('sp').style.display='none',300)"
-  onerror="document.getElementById('sp').style.display='none';document.getElementById('er').style.display='flex'">
-</iframe>
-</body></html>`;
-  }
-
-  // Local PDF — pdf.js with clean Google Drive-like UI
+// ── PDF: local file → continuous-scroll pages like Google Drive ──────────
+function buildPdfDataHtml(b64: string): string {
   return `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=3,user-scalable=yes">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#525659;font-family:-apple-system,sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column}
-  #toolbar{
-    display:flex;align-items:center;gap:10px;
-    padding:0 14px;height:48px;min-height:48px;
-    background:#3c4043;color:#fff;
-    box-shadow:0 2px 8px rgba(0,0,0,0.3);
-    position:relative;z-index:10;flex-shrink:0
-  }
-  .t-btn{
-    background:transparent;border:none;color:#bdc1c6;
-    padding:6px 10px;border-radius:6px;font-size:13px;
-    cursor:pointer;font-weight:600;transition:.15s;min-width:36px
-  }
-  .t-btn:hover{background:rgba(255,255,255,0.1);color:#fff}
-  .t-btn:active{background:rgba(255,255,255,0.2)}
-  .t-btn:disabled{opacity:0.35;cursor:default}
-  .t-sep{width:1px;height:20px;background:rgba(255,255,255,0.15);margin:0 4px}
-  #pg-info{font-size:12px;color:#bdc1c6;font-weight:600;min-width:70px;text-align:center}
-  #pg-inp{
-    width:40px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);
-    border-radius:4px;color:#fff;text-align:center;padding:3px;font-size:12px
-  }
-  .of{color:rgba(255,255,255,0.5);font-size:11px}
-  #zoom-label{font-size:11px;color:#bdc1c6;min-width:38px;text-align:center}
-  #scroll{flex:1;overflow-y:auto;overflow-x:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:12px}
-  canvas{
-    display:block;background:#fff;
-    box-shadow:0 4px 20px rgba(0,0,0,0.4);
-    border-radius:2px;max-width:100%
-  }
-  ${SPINNER_CSS}
-  .err{z-index:100}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{background:${DOCS_BG};font-family:Roboto,Arial,sans-serif}
+#pages{display:flex;flex-direction:column;align-items:center;gap:10px;min-width:100%;width:max-content;padding:10px 8px 96px}
+.pg{background:#fff;flex-shrink:0;box-shadow:0 1px 3px rgba(60,64,67,.3),0 4px 8px 3px rgba(60,64,67,.15)}
+.pg canvas{display:block;width:100%;height:100%}
+#pill{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:rgba(32,33,36,.92);color:#fff;font-size:12px;font-weight:600;padding:8px 14px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none}
+#zoom{position:fixed;right:12px;bottom:14px;display:flex;flex-direction:column;gap:8px}
+#zoom button{width:40px;height:40px;border:0;border-radius:12px;background:#fff;color:#3c4043;font-size:20px;font-weight:700;box-shadow:0 2px 6px rgba(60,64,67,.35)}
+#zoom button:active{background:#e8eaed}
+${ERR_CSS}
 </style></head><body>
-<div class="spin-wrap" id="sp"><div class="ring"></div><div class="spin-label">Loading PDF…</div></div>
-<div class="err" id="er" style="z-index:100"><div class="err-icon">📄</div><div class="err-title">Cannot load PDF</div><div class="err-msg" id="er-msg">An error occurred.</div></div>
-
-<div id="toolbar">
-  <button class="t-btn" id="btn-prev" onclick="go(-1)" disabled title="Previous page">‹</button>
-  <input id="pg-inp" type="number" min="1" value="1" onchange="jumpTo(this.value)" />
-  <span class="of">/ <span id="pc">–</span></span>
-  <button class="t-btn" id="btn-next" onclick="go(1)" disabled title="Next page">›</button>
-  <div class="t-sep"></div>
-  <button class="t-btn" onclick="zoom(-0.15)" title="Zoom out">−</button>
-  <span id="zoom-label">100%</span>
-  <button class="t-btn" onclick="zoom(0.15)" title="Zoom in">+</button>
-  <button class="t-btn" onclick="fitWidth()" title="Fit to width">⟺</button>
-</div>
-<div id="scroll"></div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<div id="pages"></div><div id="err"></div><div id="pill"></div>
+<div id="zoom"><button onclick="setZoom(zm*1.25)">+</button><button onclick="setZoom(zm/1.25)">&minus;</button></div>
+<script>var B64='${b64}';${PAGE_JS_HELPERS}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" onerror="fail('Could not load the PDF engine. Check your internet connection.')"></script>
 <script>
-pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-var pdf=null,pg=1,sc=1.0,busy=false,VW=window.innerWidth-32;
-var scroll=document.getElementById('scroll');
-
-function hide(id){document.getElementById(id).style.display='none'}
-function show(id){document.getElementById(id).style.display='flex'}
-function setText(id,v){document.getElementById(id).textContent=v}
-
-function showErr(m){
-  hide('sp');
-  setText('er-msg',m+' — try opening with a PDF reader app.');
-  show('er');
+var pdf=null,zm=1,N=0,items=[],ratio=[],done={},tasks={},cw=window.innerWidth-16,pillT=null,raf=null;
+var CDN='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+var pagesEl=document.getElementById('pages'),pill=document.getElementById('pill');
+function pageW(){return cw*zm}
+function sizeAll(){for(var i=0;i<N;i++){var w=pageW();items[i].style.width=w+'px';items[i].style.height=(w*(ratio[i]||ratio[0]))+'px'}}
+function renderPage(i){
+  var key=Math.round(zm*100);
+  if(done[i]===key)return;done[i]=key;
+  if(tasks[i]){try{tasks[i].cancel()}catch(e){}}
+  pdf.getPage(i+1).then(function(p){
+    var base=p.getViewport({scale:1});
+    ratio[i]=base.height/base.width;
+    var w=pageW(),vp=p.getViewport({scale:w/base.width});
+    var dpr=Math.min(window.devicePixelRatio||1,2);
+    var el=items[i];el.style.width=w+'px';el.style.height=(w*ratio[i])+'px';
+    var c=el.firstChild;c.width=Math.floor(vp.width*dpr);c.height=Math.floor(vp.height*dpr);
+    var ctx=c.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+    var t=p.render({canvasContext:ctx,viewport:vp});tasks[i]=t;
+    t.promise.then(function(){if(i===0)ready()}).catch(function(){});
+  }).catch(function(e){if(i===0)fail(e&&e.message)});
 }
-
-function updateBtns(){
-  document.getElementById('btn-prev').disabled=pg<=1;
-  document.getElementById('btn-next').disabled=!pdf||pg>=pdf.numPages;
-  document.getElementById('pg-inp').value=pg;
-  setText('zoom-label',Math.round(sc*100)+'%');
+function visible(){
+  var top=window.scrollY-700,bot=window.scrollY+window.innerHeight+700;
+  for(var i=0;i<N;i++){var el=items[i],y=el.offsetTop,h=el.offsetHeight;if(y+h>=top&&y<=bot)renderPage(i)}
 }
-
-async function renderPage(n){
-  if(busy||!pdf)return;
-  busy=true;pg=n;
-  try{
-    var page=await pdf.getPage(n);
-    var vp=page.getViewport({scale:sc});
-    scroll.innerHTML='';
-    var canvas=document.createElement('canvas');
-    var ctx=canvas.getContext('2d');
-    canvas.width=vp.width;canvas.height=vp.height;
-    scroll.appendChild(canvas);
-    await page.render({canvasContext:ctx,viewport:vp}).promise;
-    scroll.scrollTop=0;
-    updateBtns();
-  }catch(e){showErr(e.message);}
-  busy=false;
+function current(){
+  var mid=window.scrollY+window.innerHeight/2,c=0;
+  for(var i=0;i<N;i++){if(items[i].offsetTop<=mid)c=i}
+  return c+1;
 }
-
-function go(d){if(!busy&&pdf){var n=pg+d;if(n>=1&&n<=pdf.numPages)renderPage(n);}}
-function jumpTo(v){var n=parseInt(v);if(n>=1&&pdf&&n<=pdf.numPages)renderPage(n);}
-function zoom(d){sc=Math.min(Math.max(sc+d,0.4),3.5);renderPage(pg);}
-function fitWidth(){
-  if(!pdf)return;
-  pdf.getPage(pg).then(function(p){
-    var vp=p.getViewport({scale:1});
-    sc=VW/vp.width;renderPage(pg);
+function onScroll(){
+  if(raf)return;
+  raf=requestAnimationFrame(function(){
+    raf=null;visible();
+    pill.textContent=current()+' / '+N;pill.style.opacity=1;
+    clearTimeout(pillT);pillT=setTimeout(function(){pill.style.opacity=0},1400);
   });
 }
-
-pdfjsLib.getDocument({url:'${uri}',verbosity:0}).promise.then(function(d){
-  pdf=d;
-  setText('pc',d.numPages);
-  hide('sp');
-  fitWidth();
-}).catch(function(e){showErr(e.message);});
-
-window.addEventListener('resize',function(){VW=window.innerWidth-32;});
+function setZoom(z){
+  z=Math.max(0.6,Math.min(4,z));if(z===zm)return;
+  var r=(window.scrollY+window.innerHeight/2)/document.documentElement.scrollHeight;
+  zm=z;sizeAll();
+  window.scrollTo(window.scrollX,r*document.documentElement.scrollHeight-window.innerHeight/2);
+  clearTimeout(window._zt);window._zt=setTimeout(visible,120);
+}
+window.addEventListener('scroll',onScroll,{passive:true});
+var pd=0,pz=1;
+function dist(t){var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.sqrt(dx*dx+dy*dy)}
+document.addEventListener('touchstart',function(e){if(e.touches.length===2){pd=dist(e.touches);pz=zm}},{passive:true});
+document.addEventListener('touchmove',function(e){if(e.touches.length===2&&pd){e.preventDefault();setZoom(pz*dist(e.touches)/pd)}},{passive:false});
+var sx=0,sy=0,st=0,lastTap=0;
+document.addEventListener('touchstart',function(e){if(e.touches.length===1){sx=e.touches[0].clientX;sy=e.touches[0].clientY;st=Date.now()}},{passive:true});
+document.addEventListener('touchend',function(e){
+  pd=0;
+  if(e.changedTouches.length!==1||e.touches.length!==0)return;
+  var t=e.changedTouches[0],n=Date.now();
+  var tap=Math.abs(t.clientX-sx)<10&&Math.abs(t.clientY-sy)<10&&n-st<250;
+  if(tap){if(n-lastTap<300){setZoom(zm>1.2?1:2.2);lastTap=0}else{lastTap=n}}
+});
+function boot(){
+  fetch(CDN+'pdf.worker.min.js').then(function(r){return r.text()}).then(function(t){
+    pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([t],{type:'text/javascript'}));
+  }).catch(function(){pdfjsLib.GlobalWorkerOptions.workerSrc=CDN+'pdf.worker.min.js'}).then(function(){
+    return pdfjsLib.getDocument({data:b2u(B64),verbosity:0}).promise;
+  }).then(function(d){pdf=d;N=d.numPages;return d.getPage(1)}).then(function(p){
+    var b=p.getViewport({scale:1});ratio[0]=b.height/b.width;
+    for(var i=0;i<N;i++){var el=document.createElement('div');el.className='pg';el.appendChild(document.createElement('canvas'));pagesEl.appendChild(el);items.push(el)}
+    sizeAll();visible();
+  }).catch(function(e){fail('This PDF could not be opened'+(e&&e.message?' ('+e.message+')':''))});
+}
+if(window.pdfjsLib)boot();
 </script></body></html>`;
 }
 
+// ── Office: remote (Microsoft viewer) ────────────────────────────────────
 function buildOfficeViewerHtml(uri: string): string {
-  // Microsoft Office Online handles Word, Excel, PowerPoint
-  const msUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(uri)}`;
+  const ms = 'https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(uri);
+  return `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*{margin:0;padding:0}html,body{height:100%;background:#fff}iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head>
+<body><iframe src="${ms}" onload="try{window.ReactNativeWebView.postMessage('ready')}catch(e){}"></iframe></body></html>`;
+}
+
+// ── Word (.docx) → paper page ────────────────────────────────────────────
+function buildDocxHtml(b64: string): string {
+  return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>${PAPER_CSS}${ERR_CSS}</style></head><body>
+<div class="paper" id="doc"></div><div id="err"></div>
+<script>var B64='${b64}';${PAGE_JS_HELPERS}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js" onerror="fail('Could not load the document engine. Check your internet connection.')"></script>
+<script>
+if(window.mammoth){
+  mammoth.convertToHtml({arrayBuffer:b2u(B64).buffer}).then(function(r){
+    document.getElementById('doc').innerHTML=r.value||'<p style="color:#5f6368">This document is empty.</p>';ready();
+  }).catch(function(e){document.getElementById('doc').style.display='none';fail('This document could not be read'+(e&&e.message?' ('+e.message+')':''))});
+}
+</script></body></html>`;
+}
+
+// ── Excel (.xlsx/.xls/.ods) → Sheets-style grid with tabs ────────────────
+function buildSheetHtml(b64: string): string {
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  html,body{width:100%;height:100%;overflow:hidden;background:#fff}
-  iframe{position:fixed;inset:0;width:100%;height:100%;border:none}
-  ${SPINNER_CSS}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#fff;font-family:Roboto,Arial,sans-serif}
+#tabs{position:fixed;left:0;right:0;bottom:0;height:44px;background:#f8f9fa;display:flex;overflow-x:auto;box-shadow:0 -1px 4px rgba(60,64,67,.2);z-index:5}
+#tabs button{flex:0 0 auto;border:0;background:transparent;padding:0 18px;font-size:13px;font-weight:600;color:#5f6368;height:44px}
+#tabs button.on{color:#188038;background:#e6f4ea;box-shadow:inset 0 -3px 0 #188038}
+#wrap{position:absolute;top:0;left:0;right:0;bottom:44px;overflow:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;font-size:12px;min-width:100%}
+th,td{border:1px solid #e1e3e6;padding:4px 8px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;height:26px}
+th{background:#f8f9fa;color:#5f6368;font-weight:600;text-align:center;position:sticky;top:0;z-index:2}
+td.rn{background:#f8f9fa;color:#5f6368;text-align:center;position:sticky;left:0;z-index:1;min-width:38px}
+th.cn{left:0;z-index:3}
+#note{padding:14px;font-size:11px;color:#80868b;text-align:center}
+${ERR_CSS}
 </style></head><body>
-<div class="spin-wrap" id="sp"><div class="ring"></div><div class="spin-label">Loading document…</div></div>
-<div class="err" id="er"><div class="err-icon">📄</div><div class="err-title">Preview unavailable</div><div class="err-msg">Office preview requires a public URL. Tap Share to open with a compatible app.</div></div>
-<iframe src="${msUrl}"
-  onload="document.getElementById('sp').style.opacity='0';setTimeout(()=>document.getElementById('sp').style.display='none',300)"
-  onerror="document.getElementById('sp').style.display='none';document.getElementById('er').style.display='flex'">
-</iframe>
-</body></html>`;
+<div id="wrap"></div><div id="tabs"></div><div id="err"></div>
+<script>var B64='${b64}';${PAGE_JS_HELPERS}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" onerror="fail('Could not load the spreadsheet engine. Check your internet connection.')"></script>
+<script>
+(function(){
+if(!window.XLSX)return;
+try{
+  var wb=XLSX.read(b2u(B64),{type:'array'});
+  var wrap=document.getElementById('wrap'),tabs=document.getElementById('tabs');
+  var col=function(n){var s='';n++;while(n>0){var m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s};
+  var esc=function(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')};
+  var show=function(k){
+    var ws=wb.Sheets[wb.SheetNames[k]];
+    var rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:''});
+    var total=rows.length;rows=rows.slice(0,500);
+    var mc=0;rows.forEach(function(r){if(r.length>mc)mc=r.length});mc=Math.min(Math.max(mc,1),60);
+    var h='<table><thead><tr><th class="cn"></th>';
+    for(var c=0;c<mc;c++)h+='<th>'+col(c)+'</th>';
+    h+='</tr></thead><tbody>';
+    rows.forEach(function(r,i){h+='<tr><td class="rn">'+(i+1)+'</td>';for(var c=0;c<mc;c++)h+='<td>'+esc(r[c]==null?'':r[c])+'</td>';h+='</tr>'});
+    h+='</tbody></table>';
+    if(total>500)h+='<div id="note">Showing the first 500 of '+total+' rows</div>';
+    if(!total)h='<div id="note">This sheet is empty</div>';
+    wrap.innerHTML=h;wrap.scrollTop=0;wrap.scrollLeft=0;
+    var bs=tabs.children;for(var i=0;i<bs.length;i++)bs[i].className=(i===k?'on':'');
+  };
+  wb.SheetNames.forEach(function(n,i){var b=document.createElement('button');b.textContent=n;b.onclick=function(){show(i)};tabs.appendChild(b)});
+  show(0);ready();
+}catch(e){fail('This spreadsheet could not be read'+(e&&e.message?' ('+e.message+')':''))}
+})();
+</script></body></html>`;
 }
 
+// ── PowerPoint (.pptx) → 16:9 slide cards (text + first images) ──────────
+function buildPptxHtml(b64: string): string {
+  return `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{box-sizing:border-box}html,body{margin:0;background:${DOCS_BG};font-family:Arial,Helvetica,sans-serif}
+#list{display:flex;flex-direction:column;align-items:center;gap:16px;padding:12px 8px 40px}
+.sl{width:100%;max-width:760px}
+.sn{font-size:11px;font-weight:700;color:#5f6368;margin:0 2px 6px}
+.card{position:relative;width:100%;padding-top:56.25%;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 1px 3px rgba(60,64,67,.3),0 4px 8px 3px rgba(60,64,67,.15)}
+.in{position:absolute;top:0;left:0;right:0;bottom:0;padding:5% 6%;overflow:hidden;display:flex;flex-direction:column;gap:2.4%}
+.ti{font-size:clamp(15px,4.4vw,30px);font-weight:700;color:#202124;line-height:1.2}
+.tx{font-size:clamp(11px,2.7vw,18px);color:#3c4043;line-height:1.35}
+.im{display:flex;gap:2%;margin-top:auto;height:38%}
+.im img{max-width:32%;max-height:100%;object-fit:contain;border-radius:3px}
+${ERR_CSS}
+</style></head><body>
+<div id="list"></div><div id="err"></div>
+<script>var B64='${b64}';${PAGE_JS_HELPERS}</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" onerror="fail('Could not load the presentation engine. Check your internet connection.')"></script>
+<script>
+(function(){
+if(!window.JSZip)return;
+var list=document.getElementById('list');
+function esc(v){return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function paras(xml){
+  var d=new DOMParser().parseFromString(xml,'application/xml'),ps=d.getElementsByTagName('a:p'),out=[];
+  for(var i=0;i<ps.length;i++){var ts=ps[i].getElementsByTagName('a:t'),t='';for(var j=0;j<ts.length;j++)t+=ts[j].textContent;t=t.trim();if(t)out.push(t)}
+  return out;
+}
+function mime(n){var e=n.split('.').pop().toLowerCase();return e==='png'?'image/png':e==='gif'?'image/gif':(e==='jpg'||e==='jpeg')?'image/jpeg':null}
+function loadImg(zip,fn,m){var f=zip.file(fn);return f?f.async('base64').then(function(b){return 'data:'+m+';base64,'+b}):Promise.resolve(null)}
+JSZip.loadAsync(B64,{base64:true}).then(function(zip){
+  var names=Object.keys(zip.files).filter(function(n){return n.indexOf('ppt/slides/slide')===0&&n.slice(-4)==='.xml'});
+  names.sort(function(a,b){return parseInt(a.slice(16))-parseInt(b.slice(16))});
+  if(!names.length){fail('No slides were found in this presentation');return}
+  var chain=Promise.resolve();
+  names.forEach(function(n,idx){
+    chain=chain.then(function(){
+      return zip.file(n).async('string').then(function(xml){
+        var ps=paras(xml),rel=zip.file('ppt/slides/_rels/'+n.slice(11)+'.rels');
+        if(!rel)return {ps:ps,imgs:[]};
+        return rel.async('string').then(function(rx){
+          var rd=new DOMParser().parseFromString(rx,'application/xml'),rs=rd.getElementsByTagName('Relationship'),jobs=[];
+          for(var i=0;i<rs.length&&jobs.length<3;i++){
+            var tg=rs[i].getAttribute('Target')||'';
+            if(tg.indexOf('media/')>-1){var fn='ppt/media/'+tg.split('/').pop(),m=mime(fn);if(m)jobs.push(loadImg(zip,fn,m))}
+          }
+          return Promise.all(jobs).then(function(imgs){return {ps:ps,imgs:imgs}});
+        });
+      });
+    }).then(function(s){
+      var title=s.ps.length?s.ps[0]:'',body=s.ps.slice(1);
+      var h='<div class="sl"><div class="sn">Slide '+(idx+1)+'</div><div class="card"><div class="in">';
+      if(title)h+='<div class="ti">'+esc(title)+'</div>';
+      body.slice(0,14).forEach(function(t){h+='<div class="tx">'+esc(t)+'</div>'});
+      if(s.imgs.length){h+='<div class="im">';s.imgs.forEach(function(u){if(u)h+='<img src="'+u+'">'});h+='</div>'}
+      if(!s.ps.length&&!s.imgs.length)h+='<div class="tx" style="color:#9aa0a6">(No text on this slide)</div>';
+      h+='</div></div></div>';
+      list.insertAdjacentHTML('beforeend',h);
+      if(idx===0)ready();
+    });
+  });
+  return chain;
+}).catch(function(e){fail('This presentation could not be read'+(e&&e.message?' ('+e.message+')':''))});
+})();
+</script></body></html>`;
+}
+
+// ── Text / Markdown → paper page, code → dark editor look ────────────────
 function buildTextHtml(text: string, name: string): string {
   const ext    = name.split('.').pop()?.toLowerCase() ?? '';
   const isCode = ['js','ts','jsx','tsx','html','htm','css','json','xml','yaml','yml',
@@ -321,85 +450,47 @@ function buildTextHtml(text: string, name: string): string {
   const esc = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
-  if (isMd) {
-    const html = esc
-      .replace(/^### (.+)$/gm,    '<h3>$1</h3>')
-      .replace(/^## (.+)$/gm,     '<h2>$1</h2>')
-      .replace(/^# (.+)$/gm,      '<h1>$1</h1>')
-      .replace(/\*\*(.+?)\*\*/gm, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/gm,     '<em>$1</em>')
-      .replace(/`(.+?)`/gm,       '<code>$1</code>')
-      .replace(/^- (.+)$/gm,      '<li>$1</li>')
-      .replace(/^> (.+)$/gm,      '<blockquote>$1</blockquote>')
-      .split('\n\n').join('</p><p>')
-      .split('\n').join('<br>');
-    return `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;color:#1e293b;font-family:-apple-system,system-ui,sans-serif;
-    font-size:15px;line-height:1.8;padding:24px 18px;max-width:720px;margin:0 auto}
-  h1{font-size:24px;font-weight:900;margin:0 0 12px;color:#0f172a;border-bottom:2px solid #f1f5f9;padding-bottom:10px}
-  h2{font-size:19px;font-weight:800;margin:20px 0 8px;color:#0f172a}
-  h3{font-size:16px;font-weight:700;margin:16px 0 6px;color:#1e293b}
-  p{margin-bottom:14px}
-  li{margin-left:22px;margin-bottom:6px}
-  strong{font-weight:700;color:#0f172a}
-  em{font-style:italic;color:#475569}
-  code{background:#f1f5f9;padding:2px 7px;border-radius:5px;
-    font-family:'Courier New',monospace;font-size:13px;color:#7c3aed}
-  blockquote{border-left:4px solid #e2e8f0;padding:8px 16px;
-    color:#64748b;margin:12px 0;font-style:italic;background:#f8fafc;border-radius:0 8px 8px 0}
-</style></head><body><p>${html}</p></body></html>`;
-  }
+    .replace(/>/g, '&gt;');
 
   if (isCode) {
     const rows = esc.split('\n').map((l: string, i: number) =>
-      `<tr><td class="ln">${i+1}</td><td class="cd">${l || '&nbsp;'}</td></tr>`
+      `<tr><td class="ln">${i + 1}</td><td class="cd">${l || '&nbsp;'}</td></tr>`
     ).join('');
     return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  html,body{background:#0f172a;height:100%}
-  table{width:100%;border-collapse:collapse;padding:8px 0}
-  .ln{
-    color:#4b5563;text-align:right;
-    padding:2px 14px 2px 10px;
-    user-select:none;vertical-align:top;
-    font-size:12px;font-family:'Courier New',monospace;
-    line-height:1.7;min-width:42px;
-    border-right:1px solid #1e293b;
-    position:sticky;left:0;background:#0f172a
-  }
-  .cd{
-    padding:2px 16px 2px 14px;
-    white-space:pre;
-    color:#38bdf8;
-    font-size:13px;font-family:'Courier New',monospace;
-    line-height:1.7;vertical-align:top
-  }
-</style></head><body>
-<table><tbody>${rows}</tbody></table>
-</body></html>`;
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:#0f172a;height:100%}
+table{width:100%;border-collapse:collapse;padding:8px 0}
+.ln{color:#4b5563;text-align:right;padding:2px 14px 2px 10px;user-select:none;vertical-align:top;
+  font-size:12px;font-family:'Courier New',monospace;line-height:1.7;min-width:42px;
+  position:sticky;left:0;background:#0f172a}
+.cd{padding:2px 16px 2px 14px;white-space:pre;color:#38bdf8;font-size:13px;
+  font-family:'Courier New',monospace;line-height:1.7;vertical-align:top}
+</style></head><body><table><tbody>${rows}</tbody></table></body></html>`;
   }
 
-  // Plain text
-  const paragraphs = esc.split('\n\n').join('</p><p>');
-  const lines = paragraphs.split('\n').join('<br>');
+  let inner: string;
+  if (isMd) {
+    inner = '<p>' + esc
+      .replace(/^### (.+)$/gm,    '</p><h3>$1</h3><p>')
+      .replace(/^## (.+)$/gm,     '</p><h2>$1</h2><p>')
+      .replace(/^# (.+)$/gm,      '</p><h1>$1</h1><p>')
+      .replace(/\*\*(.+?)\*\*/g,  '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,      '<em>$1</em>')
+      .replace(/`(.+?)`/g,        '<code>$1</code>')
+      .replace(/^- (.+)$/gm,      '<li>$1</li>')
+      .replace(/^&gt; (.+)$/gm,   '<blockquote>$1</blockquote>')
+      .split('\n\n').join('</p><p>')
+      .split('\n').join('<br>') + '</p>';
+  } else {
+    inner = '<p>' + esc.split('\n\n').join('</p><p>').split('\n').join('<br>') + '</p>';
+  }
   return `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;color:#1e293b;
-    font-family:-apple-system,system-ui,sans-serif;
-    font-size:15px;line-height:1.8;padding:24px 18px}
-  p{margin-bottom:14px}
-</style></head><body><p>${lines}</p></body></html>`;
+<style>${PAPER_CSS}</style></head><body><div class="paper">${inner}</div></body></html>`;
 }
+
 
 function buildAudioHtml(uri: string, name: string): string {
   return `<!DOCTYPE html><html><head>
@@ -727,6 +818,54 @@ const aiStyles = StyleSheet.create({
 });
 
 // ── Document Viewer ────────────────────────────────────────────────────────
+// ── Image with pinch-free zoom: buttons + double-tap, pan by scrolling ─────
+function ZoomableImage({ uri, onLoaded }: { uri: string; onLoaded: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [box, setBox]   = useState({ w: 0, h: 0 });
+  const lastTap = useRef(0);
+  const clamp = (z: number) => Math.min(4, Math.max(1, z));
+  const onTap = () => {
+    const now = Date.now();
+    if (now - lastTap.current < 280) setZoom(z => (z > 1.05 ? 1 : 2.5));
+    lastTap.current = now;
+  };
+  return (
+    <View style={{ flex: 1 }} onLayout={e => setBox({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+      {box.w > 0 && (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ minHeight: box.h, justifyContent: 'center' }}
+          showsVerticalScrollIndicator={false}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ minWidth: box.w, alignItems: 'center' }}
+          >
+            <Pressable onPress={onTap}>
+              <Image
+                source={{ uri }}
+                style={{ width: box.w * zoom, height: box.h * zoom }}
+                resizeMode="contain"
+                onLoad={onLoaded}
+                onError={onLoaded}
+              />
+            </Pressable>
+          </ScrollView>
+        </ScrollView>
+      )}
+      <View style={vStyles.zoomCol} pointerEvents="box-none">
+        <Raised onPress={() => setZoom(z => clamp(z + 0.75))} radius={14} depth={3} faceStyle={vStyles.zoomFace}>
+          <Plus size={18} color="#334155" strokeWidth={2.5} />
+        </Raised>
+        <Raised onPress={() => setZoom(z => clamp(z - 0.75))} radius={14} depth={3} faceStyle={vStyles.zoomFace}>
+          <Minus size={18} color="#334155" strokeWidth={2.5} />
+        </Raised>
+      </View>
+    </View>
+  );
+}
+
 function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => void }) {
   const [textContent,  setTextContent]  = useState('');
   const [editedText,   setEditedText]   = useState('');
@@ -735,10 +874,13 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
   const [webLoading,   setWebLoading]   = useState(true);
   const [imgLoaded,    setImgLoaded]    = useState(false);
   const [showAI,       setShowAI]       = useState(false);
+  const [docB64,       setDocB64]       = useState<string | null>(null);
+  const [docError,     setDocError]     = useState(false);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const type  = getPreviewType(file);
   const ic    = getIconColor(file.type, file.name);
   const isLocal    = !file.data.startsWith('http') && !file.data.startsWith('data:');
+  const isRemote   = file.data.startsWith('http');
   const isTextFile = type === 'text';
 
   useEffect(() => {
@@ -805,25 +947,94 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
     </View>
   );
 
-  // LoadingOverlay inlined per section for reliability
+  // ── Read local PDF / Word / Excel / PowerPoint as base64 so the viewer page can open them ──
+  useEffect(() => {
+    const needs = type === 'pdf' || (type === 'office' && officeKind(file) !== 'unsupported');
+    if (!needs || isRemote) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if ((file.size ?? 0) > 30 * 1024 * 1024) throw new Error('too large');
+        let b64 = '';
+        if (file.data.startsWith('data:')) b64 = file.data.split(',')[1] ?? '';
+        else b64 = await FileSystem.readAsStringAsync(file.data, { encoding: (FileSystem as any).EncodingType?.Base64 ?? 'base64' });
+        if (!cancelled) setDocB64(b64);
+      } catch {
+        if (!cancelled) { setDocError(true); setWebLoading(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [file]);
+
+  // Never leave the spinner up forever (e.g. offline while a library loads)
+  useEffect(() => {
+    if (!webLoading) return;
+    const t = setTimeout(() => setWebLoading(false), 25000);
+    return () => clearTimeout(t);
+  }, [webLoading]);
+
+  // Build each page once — a fresh HTML string would make the WebView reload
+  const viewerHtml = useMemo(() => {
+    if (type === 'pdf')    return isRemote ? buildPdfHtml(file.data) : docB64 ? buildPdfDataHtml(docB64) : null;
+    if (type === 'office') {
+      if (isRemote) return buildOfficeViewerHtml(file.data);
+      if (!docB64)  return null;
+      const k = officeKind(file);
+      return k === 'docx' ? buildDocxHtml(docB64) : k === 'sheet' ? buildSheetHtml(docB64) : k === 'pptx' ? buildPptxHtml(docB64) : null;
+    }
+    if (type === 'text' && !isEditing) return buildTextHtml(textContent || ' ', file.name);
+    if (type === 'audio' && isRemote)  return buildAudioHtml(file.data, file.name);
+    if (type === 'video' && isRemote)  return buildVideoHtml(file.data, file.name);
+    return null;
+  }, [type, isRemote, docB64, textContent, isEditing, file.data, file.name]);
+
+  const spinner = (label?: string) => (
+    <View style={vStyles.loadingOverlay} pointerEvents="none">
+      <ActivityIndicator size="large" color="#2563eb" />
+      <Text style={vStyles.loadingText}>{label ?? 'Opening…'}</Text>
+    </View>
+  );
+
+  const fallback = (msg: string) => (
+    <View style={vStyles.fallback}>
+      <View style={[vStyles.fallbackIcon, { backgroundColor: ic.bg }]}>
+        {getIcon(file.type, 52, file.name)}
+      </View>
+      <Text style={vStyles.fallbackName}>{file.name}</Text>
+      <Text style={vStyles.fallbackSub}>{msg}</Text>
+      <TouchableOpacity style={[vStyles.openBtn, { backgroundColor: ic.color }]}
+        onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
+        <ExternalLink size={15} color="#fff" />
+        <Text style={vStyles.openBtnText}>Open with App</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const webProps = {
+    originWhitelist: ['*'],
+    javaScriptEnabled: true,
+    domStorageEnabled: true,
+    cacheEnabled: true,
+    mixedContentMode: 'always' as const,
+    setSupportMultipleWindows: false,
+    overScrollMode: 'never' as const,
+    bounces: false,
+    showsVerticalScrollIndicator: false,
+    showsHorizontalScrollIndicator: false,
+    onMessage: (e: any) => { if (e?.nativeEvent?.data === 'ready') setWebLoading(false); },
+    onError: () => setWebLoading(false),
+  };
 
   const renderBody = () => {
-    const Spinner = () => (
-      <View style={vStyles.loadingOverlay}>
-        <ActivityIndicator size="large" color="#2563eb" />
-      </View>
-    );
-
+    // ── IMAGE ─────────────────────────────────────────────────────────────
     if (type === 'image') return (
       <View style={{ flex: 1, backgroundColor: '#111' }}>
-        <Image source={{ uri: file.data }} style={{ flex: 1, width: '100%' }}
-          resizeMode="contain"
-          onLoad={() => setImgLoaded(true)}
-          onError={() => setImgLoaded(true)} />
-        {!imgLoaded && <Spinner />}
+        <ZoomableImage uri={file.data} onLoaded={() => setImgLoaded(true)} />
+        {!imgLoaded && spinner('Loading image…')}
       </View>
     );
 
+    // ── TEXT / MARKDOWN / CODE ────────────────────────────────────────────
     if (type === 'text') {
       if (isEditing) return (
         <KeyboardAvoidingView style={{ flex: 1 }}
@@ -841,106 +1052,70 @@ function DocumentViewer({ file, onClose }: { file: LibreFile; onClose: () => voi
       );
       return (
         <View style={{ flex: 1 }}>
-          <WebView style={{ flex: 1 }} originWhitelist={['*']}
-            source={{ html: buildTextHtml(textContent || ' ', file.name) }}
+          <WebView
+            {...webProps}
+            style={{ flex: 1, backgroundColor: DOCS_BG }}
+            source={{ html: viewerHtml ?? '' }}
+            javaScriptEnabled={false}
             onLoadEnd={() => setWebLoading(false)}
-            onError={() => setWebLoading(false)}
-            showsVerticalScrollIndicator={false}
-            javaScriptEnabled={false} scrollEnabled />
-          {webLoading && <Spinner />}
+          />
+          {webLoading && spinner('Opening document…')}
         </View>
       );
     }
 
-    if (type === 'pdf') return (
-      <View style={{ flex: 1 }}>
-        <WebView style={{ flex: 1, backgroundColor: '#525659' }}
-          originWhitelist={['*']}
-          source={{ html: buildPdfHtml(file.data) }}
-          onLoadEnd={() => setWebLoading(false)}
-          onError={() => setWebLoading(false)}
-          javaScriptEnabled allowFileAccess
-          allowUniversalAccessFromFileURLs
-          mixedContentMode="always" domStorageEnabled
-          cacheEnabled={false} showsVerticalScrollIndicator={false} scrollEnabled />
-        {webLoading && <Spinner />}
-      </View>
-    );
-
-    if (type === 'office') {
-      if (isLocal) return (
-        <View style={vStyles.fallback}>
-          <View style={[vStyles.fallbackIcon, { backgroundColor: ic.bg }]}>
-            {getIcon(file.type, 52, file.name)}
-          </View>
-          <Text style={vStyles.fallbackName}>{file.name}</Text>
-          <Text style={vStyles.fallbackSub}>
-            {"Office files can only be previewed via a public URL.\nTap below to open with a compatible app."}
-          </Text>
-          <TouchableOpacity style={[vStyles.openBtn, { backgroundColor: ic.color }]}
-            onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
-            <ExternalLink size={15} color="#fff" />
-            <Text style={vStyles.openBtnText}>Open with App</Text>
-          </TouchableOpacity>
-        </View>
-      );
+    // ── PDF ───────────────────────────────────────────────────────────────
+    if (type === 'pdf') {
+      if (docError) return fallback('This PDF could not be opened inside the app. Open it with another app instead.');
+      if (!viewerHtml) return <View style={{ flex: 1 }}>{spinner('Reading PDF…')}</View>;
       return (
         <View style={{ flex: 1 }}>
-          <WebView style={{ flex: 1, backgroundColor: '#fff' }}
-            originWhitelist={['*']}
-            source={{ html: buildOfficeViewerHtml(file.data) }}
-            onLoadEnd={() => setWebLoading(false)}
-            onError={() => setWebLoading(false)}
-            javaScriptEnabled domStorageEnabled cacheEnabled={false}
-            showsVerticalScrollIndicator={false} />
-          {webLoading && <Spinner />}
+          <WebView {...webProps} style={{ flex: 1, backgroundColor: DOCS_BG }} source={{ html: viewerHtml }} allowFileAccess />
+          {webLoading && spinner('Opening PDF…')}
         </View>
       );
     }
 
-    if (type === 'audio') return (
-      <View style={{ flex: 1 }}>
-        <WebView style={{ flex: 1 }} originWhitelist={['*']}
-          source={{ html: buildAudioHtml(file.data, file.name) }}
-          onLoadEnd={() => setWebLoading(false)}
-          onError={() => setWebLoading(false)}
-          javaScriptEnabled={false} allowFileAccess
-          allowUniversalAccessFromFileURLs mixedContentMode="always" />
-        {webLoading && <Spinner />}
-      </View>
-    );
-
-    if (type === 'video') return (
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
-        <WebView style={{ flex: 1 }} originWhitelist={['*']}
-          source={{ html: buildVideoHtml(file.data, file.name) }}
-          onLoadEnd={() => setWebLoading(false)}
-          onError={() => setWebLoading(false)}
-          javaScriptEnabled={false} allowFileAccess
-          allowUniversalAccessFromFileURLs mixedContentMode="always"
-          allowsInlineMediaPlayback mediaPlaybackRequiresUserAction={false} />
-        {webLoading && <Spinner />}
-      </View>
-    );
-
-    return (
-      <View style={vStyles.fallback}>
-        <View style={[vStyles.fallbackIcon, { backgroundColor: ic.bg }]}>
-          {getIcon(file.type, 52, file.name)}
+    // ── WORD / EXCEL / POWERPOINT ─────────────────────────────────────────
+    if (type === 'office') {
+      if (!isRemote && officeKind(file) === 'unsupported')
+        return fallback('Older .doc, .ppt and .odt files can’t be shown inside the app. Open it with another app instead.');
+      if (docError) return fallback('This document could not be opened inside the app. Open it with another app instead.');
+      if (!viewerHtml) return <View style={{ flex: 1 }}>{spinner('Reading document…')}</View>;
+      return (
+        <View style={{ flex: 1 }}>
+          <WebView {...webProps} style={{ flex: 1, backgroundColor: DOCS_BG }} source={{ html: viewerHtml }} />
+          {webLoading && spinner('Opening document…')}
         </View>
-        <Text style={vStyles.fallbackName}>{file.name}</Text>
-        <Text style={vStyles.fallbackSub}>
-          {"No preview available for this file type.\nTap below to open with a compatible app."}
-        </Text>
-        <TouchableOpacity style={[vStyles.openBtn, { backgroundColor: ic.color }]}
-          onPress={() => Sharing.shareAsync(file.data)} activeOpacity={0.85}>
-          <ExternalLink size={15} color="#fff" />
-          <Text style={vStyles.openBtnText}>Open with App</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  };
+      );
+    }
 
+    // ── AUDIO / VIDEO — local files play straight from disk ───────────────
+    if (type === 'audio' || type === 'video') {
+      const src = isRemote && viewerHtml ? { html: viewerHtml } : { uri: file.data };
+      return (
+        <View style={{ flex: 1, backgroundColor: type === 'video' ? '#000' : '#fdf4ff' }}>
+          <WebView
+            style={{ flex: 1, backgroundColor: type === 'video' ? '#000' : '#fdf4ff' }}
+            originWhitelist={['*']}
+            source={src}
+            javaScriptEnabled={false}
+            allowFileAccess
+            allowUniversalAccessFromFileURLs
+            allowingReadAccessToURL={file.data}
+            mixedContentMode="always"
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            onLoadEnd={() => setWebLoading(false)}
+            onError={() => setWebLoading(false)}
+          />
+          {webLoading && spinner('Loading media…')}
+        </View>
+      );
+    }
+
+    return fallback('No preview is available for this file type.');
+  };
 
   return (
     <Animated.View style={[vStyles.container, { transform: [{ translateY }] }]}>
@@ -1042,7 +1217,7 @@ const vStyles = StyleSheet.create({
   headerSize: { fontSize: 10, color: '#94a3b8', marginTop: 2, fontWeight: '500' },
   shareBtn: { width: 36, height: 36, borderRadius: 11, backgroundColor: '#eff6ff', alignItems: 'center', justifyContent: 'center' },
 
-  body: { flex: 1 },
+  body: { flex: 1, backgroundColor: '#f1f3f4' },
 
   imageBg:   { flex: 1, backgroundColor: '#0f172a' },
   imageFile: { flex: 1, width: '100%' },
@@ -1055,6 +1230,8 @@ const vStyles = StyleSheet.create({
   openBtnText:  { color: '#fff', fontSize: 12, fontWeight: '800' },
 
   loadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.88)' },
+  zoomCol:  { position: 'absolute', right: 14, bottom: 16, gap: 10 },
+  zoomFace: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
   loadingCard: { alignItems: 'center', gap: 12, backgroundColor: '#fff', padding: 28, borderRadius: 20, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 16, elevation: 6 },
   loadingText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
 
