@@ -1,55 +1,28 @@
 
 {
-  "expo": {
-    "name": "Libre",
-    "slug": "libre-archival-node",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "light",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "icon": "./assets/icon.png",
-    "notification": {
-      "icon": "./assets/notification-icon.png",
-      "color": "#2563eb",
-      "androidMode": "default",
-      "androidCollapsedTitle": "Libre"
+  "cli": {
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
     },
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.philemon.libre"
-    },
-    "android": {
-      "package": "com.philemon.libre",
-      "versionCode": 1,
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
       }
     },
-    "plugins": [
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "Allow Libre to access your photos.",
-          "savePhotosPermission": "Allow Libre to save files to your library.",
-          "isAccessMediaLocationEnabled": false
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "icon": "./assets/notification-icon.png",
-          "color": "#2563eb",
-          "defaultChannel": "default"
-        }
-      ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "8ca44671-1f06-445e-bc61-e083d5a41bec"
+    "production": {
+      "channel": "production",
+      "android": {
+        "buildType": "app-bundle"
       }
     }
+  },
+  "submit": {
+    "production": {}
   }
 }
