@@ -765,7 +765,6 @@ const aiStyles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     padding: 18, paddingBottom: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#f1f5f9',
   },
   headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
   sparkleWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: '#7c3aed', alignItems: 'center', justifyContent: 'center' },
@@ -1837,11 +1836,6 @@ const styles = StyleSheet.create({
   // ── Top block ──
   topBlock: {
     backgroundColor: '#fff',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 4,
   },
   divider: { height: 10, backgroundColor: '#f8fafc' },
 

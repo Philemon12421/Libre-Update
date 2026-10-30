@@ -401,11 +401,11 @@ export default function BookSearch() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12, backgroundColor: '#fff' },
   title: { fontSize: 18, fontWeight: '900', color: '#0f172a', textTransform: 'uppercase' },
   subtitle: { fontSize: 10, fontWeight: '700', color: '#94a3b8', marginTop: 4, letterSpacing: 0.5 },
 
-  searchWrap: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  searchWrap: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: '#fff' },
   searchBox: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
@@ -419,7 +419,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
   },
 
-  subjectsScroll: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f1f5f9', maxHeight: 56 },
+  subjectsScroll: { backgroundColor: '#fff', maxHeight: 56 },
   subjectsContent: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   subjectChip: {
     paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20,

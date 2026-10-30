@@ -359,8 +359,6 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? 16 : 16,
     paddingBottom: 14,
     backgroundColor: '#fff',
-    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   headerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerIcon:  { width: 42, height: 42, borderRadius: 14, backgroundColor: '#7c3aed', alignItems: 'center', justifyContent: 'center' },
