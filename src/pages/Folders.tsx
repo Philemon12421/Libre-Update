@@ -577,11 +577,6 @@ const styles = StyleSheet.create({
   // ── Top ──
   topBlock: {
     backgroundColor: '#fff',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
   },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
